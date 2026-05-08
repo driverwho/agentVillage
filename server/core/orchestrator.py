@@ -7,6 +7,9 @@ from server.agents.farmer import FarmerAgent
 from server.agents.bartender import BartenderAgent
 from server.llm.token_budget import TokenBudget
 
+# 全局实例，由 main.py 初始化
+orch: "Orchestrator | None" = None
+
 
 class Orchestrator:
     def __init__(self, user_id: str = "default"):

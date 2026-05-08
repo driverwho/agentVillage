@@ -21,6 +21,13 @@ from server.core.orchestrator import Orchestrator
 
 orch = Orchestrator()
 
+# 将 orch 实例绑定到 orchestrator 模块，供 routes 模块导入
+import server.core.orchestrator as orch_mod
+orch_mod.orch = orch
+
+from server.api.routes import router
+app.include_router(router)
+
 
 @app.get("/world")
 async def get_world():
