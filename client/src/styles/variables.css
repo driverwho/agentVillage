@@ -1,0 +1,39 @@
+:root {
+  /* ── Background ── */
+  --color-bg: #2c1f16;
+  --color-panel: #3d2d20;
+  --color-input: #33251a;
+  --color-hover: #4a3828;
+
+  /* ── Border ── */
+  --color-border: #7a5540;
+  --color-border-light: #a08060;
+
+  /* ── Accent ── */
+  --color-accent: #daa520;
+  --color-accent-light: #e8c44a;
+
+  /* ── Text ── */
+  --color-text: #f0dfc4;
+  --color-text-dim: #c4a882;
+
+  /* ── Status ── */
+  --color-health: #7fb330;
+  --color-hunger: #e8a64e;
+  --color-fatigue: #cc4444;
+  --color-info: #6b9ec4;
+
+  /* ── Typography ── */
+  --font-pixel: 'Press Start 2P', 'Courier New', monospace;
+  --font-body: 'Microsoft YaHei', 'SimHei', sans-serif;
+  --font-size-xs: 10px;
+  --font-size-sm: 12px;
+  --font-size-base: 14px;
+  --font-size-lg: 18px;
+
+  /* ── Spacing ── */
+  --gap-xs: 4px;
+  --gap-sm: 8px;
+  --gap-md: 16px;
+  --gap-lg: 24px;
+}
