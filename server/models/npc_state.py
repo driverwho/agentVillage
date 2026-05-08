@@ -32,6 +32,13 @@ class NPCState:
                 (61, 80, "你感到很疲倦"),
                 (81, 100, "你疲惫到几乎无法站立"),
             ]),
+            "mood": self._describe_value(self.mood, [
+                (0, 20, "你的心情非常低落"),
+                (21, 40, "你心情不太好"),
+                (41, 60, "你心情一般"),
+                (61, 80, "你心情不错"),
+                (81, 100, "你心情非常愉快"),
+            ]),
         }
 
     def _describe_value(self, value: int, ranges) -> str:
