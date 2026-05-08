@@ -45,3 +45,12 @@ def test_player_state_visibility_social():
     visible = ps.get_visible_state(["basic", "social"])
     assert "social" in visible
     assert visible["social"]["reputation"] == 80
+
+
+def test_player_state_visibility_wealth():
+    ps = PlayerState(name="test", gold=50, items=["seed"])
+    visible = ps.get_visible_state(["basic", "wealth"])
+    assert "wealth" in visible
+    assert visible["wealth"]["gold"] == 50
+    assert "seed" in visible["wealth"]["items"]
+    assert "social" not in visible
