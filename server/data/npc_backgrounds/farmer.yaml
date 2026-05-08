@@ -1,0 +1,10 @@
+id: farmer
+name: 农夫王大爷
+daily_habits: "日出而作，日落而息。中午在田边大树下吃干粮。"
+core_motivation: "守住祖传的三亩地，供儿子读书。"
+secret: "年轻时曾是镇上有名的拳师，因伤人入狱三年。"
+speaking_style: "说话慢条斯理，爱用农谚。称呼年轻人'小伙子'。"
+visibility:
+  - basic
+tools:
+  - farming
