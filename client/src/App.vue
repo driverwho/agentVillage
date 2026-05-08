@@ -5,6 +5,7 @@
     <StatusPanel />
     <NPCPanel />
     <ChatPanel />
+    <ToolPanel />
   </div>
 </template>
 
@@ -13,4 +14,5 @@ import TimeControl from './components/TimeControl.vue'
 import StatusPanel from './components/StatusPanel.vue'
 import NPCPanel from './components/NPCPanel.vue'
 import ChatPanel from './components/ChatPanel.vue'
+import ToolPanel from './components/ToolPanel.vue'
 </script>
