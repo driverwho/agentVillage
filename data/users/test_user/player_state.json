@@ -1,0 +1,14 @@
+{
+  "name": "玩家",
+  "health": 100,
+  "hunger": 100,
+  "fatigue": 0,
+  "location": "village_entrance",
+  "gold": 10,
+  "items": [],
+  "relationships": {},
+  "reputation": 50,
+  "lawful_score": 50,
+  "farm_count": 0,
+  "crops_harvested": []
+}
