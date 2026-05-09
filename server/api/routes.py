@@ -31,14 +31,17 @@ async def chat_with_npc(npc_id: str, message: str, option: str | None = None):
 
     # 组装上下文 + 调用LLM（如果API key可用）
     try:
-        from server.llm.context_builder import ContextBuilder, BuildParams, ContextConfig
+        from server.llm.context_builder import ContextBuilder, BuildParams
         from server.llm.context_audit import ContextAudit
+        from server.config import config as game_config
 
-        config = ContextConfig.from_env()
+        # 从配置文件加载 ContextBuilder，warning 状态时缩减上限
+        model_limit = game_config.LLM_CONTEXT_LIMIT
         if npc.budget.status.value == "warning":
-            config.model_limit = int(config.model_limit * 0.7)
+            model_limit = int(model_limit * 0.7)
 
-        builder = ContextBuilder(config=config)
+        builder = ContextBuilder.from_config(game_config)
+        builder.model_limit = model_limit
 
         visible_state = npc.get_visible_state(orch.player_state)
         world_state = {
@@ -94,7 +97,7 @@ async def chat_with_npc(npc_id: str, message: str, option: str | None = None):
                 npc_id=npc_id,
                 layers=lay_ers,
                 total_tokens=result.audit.get("total_tokens", 0),
-                model_limit=result.audit.get("model_limit", config.model_limit),
+                model_limit=result.audit.get("model_limit", builder.model_limit),
                 budget_status=result.budget_status,
             )
             _asyncio.create_task(_asyncio.to_thread(ContextAudit.write, npc_id, entry))

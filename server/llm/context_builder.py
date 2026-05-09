@@ -1,27 +1,10 @@
-import os
 from dataclasses import dataclass, field
 from typing import List, Dict, Union
 
 
-@dataclass
-class ContextConfig:
-    model_limit: int = 4096
-    output_reserve: int = 500
-    compress_threshold: int = 10
-    tired_threshold: int = 200
-    decay_rate: float = 0.05
-
-    @classmethod
-    def from_env(cls) -> "ContextConfig":
-        return cls(
-            model_limit=int(os.getenv("LLM_CONTEXT_LIMIT", "4096")),
-            output_reserve=int(os.getenv("LLM_OUTPUT_RESERVE", "500")),
-        )
-
-    def quota(self, layer: int) -> int:
-        ratios = {0: 0.30, 1: 0.05, 2: 0.05, 3: 0.10, 4: 0.25, 5: 0.25}
-        return int(self.model_limit * ratios.get(layer, 0))
-
+# ============================================================
+# 数据结构
+# ============================================================
 
 @dataclass
 class BuildParams:
@@ -49,18 +32,75 @@ class BuildResult:
     budget_status: str = "normal"
 
 
+# ============================================================
+# ContextBuilder
+# ============================================================
+
 class ContextBuilder:
-    def __init__(self, config: ContextConfig | None = None,
-                 retriever=None):
-        self.config = config or ContextConfig()
-        self.retriever = retriever  # MemoryRetriever, set in Task 6
+    """6 层上下文组装管道。
+
+    所有配置项可在构造时传入，或通过 ``from_config()`` 从 GameConfig 加载。
+    也支持直接关键字传参覆盖配置文件中的值。
+    """
+
+    def __init__(
+        self,
+        *,
+        model_limit: int = 4096,
+        output_reserve: int = 500,
+        layer_quotas: Dict[int, float] | None = None,
+        compress_threshold: int = 10,
+        tired_threshold: int = 200,
+        decay_rate: float = 0.05,
+        injection_blacklist: tuple | None = None,
+        retriever=None,
+    ):
+        self.model_limit = model_limit
+        self.output_reserve = output_reserve
+        self.layer_quotas = layer_quotas or {
+            0: 0.30, 1: 0.05, 2: 0.05, 3: 0.10, 4: 0.25, 5: 0.25,
+        }
+        self.compress_threshold = compress_threshold
+        self.tired_threshold = tired_threshold
+        self.decay_rate = decay_rate
+        self.injection_blacklist = injection_blacklist or (
+            "ignore previous", "ignore all previous", "system prompt", "system:",
+        )
+        self.retriever = retriever
         self._identity_checksum: int | None = None
+
+    @classmethod
+    def from_config(cls, game_config=None) -> "ContextBuilder":
+        """从 GameConfig 实例创建 ContextBuilder。
+
+        game_config 应是 ``server.config.GameConfig`` 实例。
+        未传入时自动加载默认配置。
+        """
+        if game_config is None:
+            from server.config import config as game_config
+
+        return cls(
+            model_limit=game_config.LLM_CONTEXT_LIMIT,
+            output_reserve=game_config.LLM_OUTPUT_RESERVE,
+            layer_quotas=dict(game_config.CONTEXT_LAYER_QUOTAS),
+            compress_threshold=game_config.CONTEXT_COMPRESS_THRESHOLD,
+            tired_threshold=game_config.CONTEXT_TIRED_THRESHOLD,
+            decay_rate=game_config.CONTEXT_DECAY_RATE,
+            injection_blacklist=game_config.INJECTION_BLACKLIST,
+        )
+
+    def _quota(self, layer: int) -> int:
+        return int(self.model_limit * self.layer_quotas.get(layer, 0))
 
     def _get_retriever(self):
         if self.retriever is None:
             from server.llm.memory_retriever import SimpleKeywordRetriever
             self.retriever = SimpleKeywordRetriever()
         return self.retriever
+
+    # ============================================================
+    # 主入口
+    # ============================================================
 
     def build(self, params: BuildParams) -> BuildResult:
         from server.llm.token_counter import TokenCounter
@@ -86,18 +126,18 @@ class ContextBuilder:
         l3 = self._build_layer_3(params.interlocutor)
         audit["L3"] = {"tokens": l3.tokens, "truncated": l3.truncated}
 
-        # Step 5: Layer 4
+        # Step 5: Layer 4 — 记忆检索
         l4_content, l4_meta = self._build_layer_4(params.current_input, params.memory_files)
         l4_tokens = TokenCounter.count(l4_content)
-        l4_quota = self.config.quota(4)
+        l4_quota = self._quota(4)
         l4_truncated = l4_tokens > l4_quota
         audit["L4"] = {"tokens": min(l4_tokens, l4_quota), "truncated": l4_truncated, "meta": l4_meta}
 
-        # Step 6: Layer 5
+        # Step 6: Layer 5 — 活跃对话（弹性）
         l0_l4_tokens = l0.tokens + l1.tokens + l2.tokens + l3.tokens + audit["L4"]["tokens"]
-        remaining = self.config.model_limit - l0_l4_tokens - self.config.output_reserve
+        remaining = self.model_limit - l0_l4_tokens - self.output_reserve
 
-        if remaining < self.config.tired_threshold:
+        if remaining < self.tired_threshold:
             budget_status = "tired"
 
         l5_result = self._build_layer_5(params.dialogue_history, params.current_input, remaining)
@@ -108,15 +148,19 @@ class ContextBuilder:
         messages = self._sanitize(messages)
 
         total_tokens = TokenCounter.count_messages(messages)
-        if total_tokens > self.config.model_limit - self.config.output_reserve:
+        if total_tokens > self.model_limit - self.output_reserve:
             l5_fallback = self._build_layer_5(params.dialogue_history[-3:], params.current_input, remaining)
             messages = self._assemble_messages(l0, l1, l2, l3, l4_content, l5_fallback, budget_status)
             messages = self._sanitize(messages)
 
         audit["total_tokens"] = TokenCounter.count_messages(messages)
-        audit["model_limit"] = self.config.model_limit
+        audit["model_limit"] = self.model_limit
 
         return BuildResult(messages=messages, audit=audit, budget_status=budget_status)
+
+    # ============================================================
+    # Layer 0-5 实现
+    # ============================================================
 
     def _build_layer_0(self, identity: dict) -> LayerResult:
         current_checksum = hash(frozenset(identity.items()))
@@ -134,7 +178,7 @@ class ContextBuilder:
         )
         content = f"【系统角色】\n{prompt}"
         tokens = TokenCounter.count(content)
-        quota = self.config.quota(0)
+        quota = self._quota(0)
         if tokens > quota:
             return LayerResult(content=content, tokens=tokens, errors=["Layer 0 exceeds quota"])
         return LayerResult(content=content, tokens=tokens)
@@ -147,7 +191,7 @@ class ContextBuilder:
             f"今日事件：{world_state.get('events', '无特殊事件')}。"
         )
         tokens = TokenCounter.count(content)
-        quota = self.config.quota(1)
+        quota = self._quota(1)
         truncated = tokens > quota
         if truncated:
             content = (
@@ -165,7 +209,7 @@ class ContextBuilder:
             f"{d['health']}。{d['hunger']}。{d['fatigue']}。{d['mood']}。"
         )
         tokens = TokenCounter.count(content)
-        quota = self.config.quota(2)
+        quota = self._quota(2)
         truncated = tokens > quota
         if truncated:
             content = f"【自身状态】\n{d['health']}。{d['mood']}。"
@@ -180,7 +224,7 @@ class ContextBuilder:
             parts.append(f"ta当前状态：{interlocutor['visible_state']}")
         content = "\n".join(parts)
         tokens = TokenCounter.count(content)
-        quota = self.config.quota(3)
+        quota = self._quota(3)
         truncated = tokens > quota
         if truncated:
             content = parts[0]
@@ -188,24 +232,22 @@ class ContextBuilder:
         return LayerResult(content=content, tokens=tokens, truncated=truncated)
 
     def _build_layer_4(self, trigger: str, memory_files: dict) -> tuple:
-        quota = self.config.quota(4)
+        quota = self._quota(4)
         return self._get_retriever().retrieve(trigger, memory_files, max_tokens=quota)
 
     def _build_layer_5(self, dialogue_history: list, current_input: str, remaining: int) -> LayerResult:
         messages = []
         used = 0
 
-        if remaining < self.config.tired_threshold:
+        if remaining < self.tired_threshold:
             return LayerResult(content=[], tokens=0, truncated=False)
 
-        # 当前输入优先
         current_tokens = TokenCounter.count(current_input)
         if current_tokens <= remaining:
             messages.append({"role": "user", "content": current_input})
             remaining -= current_tokens
             used += current_tokens
 
-        # 从最新往前取历史
         kept = []
         for turn in reversed(dialogue_history):
             t = TokenCounter.count(turn.get("content", ""))
@@ -215,8 +257,7 @@ class ContextBuilder:
             remaining -= t
             used += t
 
-        # 压缩逻辑
-        if len(dialogue_history) > self.config.compress_threshold and len(kept) < len(dialogue_history):
+        if len(dialogue_history) > self.compress_threshold and len(kept) < len(dialogue_history):
             messages.insert(0, {"role": "system", "content": "【当前对话】\n[前情摘要] 之前的对话已省略。"})
 
         messages = kept + messages
@@ -251,17 +292,15 @@ class ContextBuilder:
         return messages
 
     def _sanitize(self, messages: list) -> list:
-        """过滤注入关键词"""
-        blocked = ["ignore previous", "ignore all previous", "system prompt", "system:"]
         sanitized = []
         for m in messages:
             content = m.get("content", "")
-            for kw in blocked:
+            for kw in self.injection_blacklist:
                 if kw.lower() in content.lower():
                     content = content.replace(kw, "[filtered]")
             sanitized.append({**m, "content": content})
         return sanitized
 
 
-# 保持模块级 TokenCounter 引用
-from server.llm.token_counter import TokenCounter
+# 模块级 TokenCounter 引用（类方法中延迟导入以避免循环依赖）
+from server.llm.token_counter import TokenCounter  # noqa: E402
