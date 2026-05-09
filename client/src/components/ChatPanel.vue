@@ -1,6 +1,6 @@
 <template>
   <div class="chat-panel">
-    <h3>对话 — {{ npcName }}</h3>
+    <div class="chat-npc-label">{{ npcName }}</div>
 
     <div class="messages" ref="msgContainer">
       <div
@@ -17,7 +17,6 @@
       </div>
     </div>
 
-    <!-- 居中分散的选项按钮 -->
     <div class="options" v-if="currentOptions.length">
       <button
         v-for="(opt, i) in currentOptions"
@@ -82,18 +81,18 @@ function selectOption(opt: string) {
 
 <style scoped>
 .chat-panel {
-  background: var(--color-panel);
-  border: 2px solid var(--color-border);
   padding: var(--gap-md);
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-height: 300px;
 }
 
-.chat-panel h3 {
+.chat-npc-label {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  color: var(--color-text-dim);
   margin-bottom: var(--gap-sm);
-  font-size: var(--font-size-sm);
+  text-align: center;
 }
 
 .messages {
@@ -153,7 +152,7 @@ function selectOption(opt: string) {
 }
 
 .opt-btn {
-  font-size: 9px;
+  font-size: 11px;
   padding: 6px 12px;
   background: var(--color-bg);
   border: 2px solid var(--color-border);
@@ -171,7 +170,5 @@ function selectOption(opt: string) {
   gap: var(--gap-sm);
 }
 
-.input-area input {
-  flex: 1;
-}
+.input-area input { flex: 1; }
 </style>

@@ -5,7 +5,6 @@
       今日剩余 <span class="quota-num">{{ mock.dailyEventQuota }}</span> 次
     </div>
 
-    <!-- 随机事件卡 -->
     <div class="event-cards">
       <div
         v-for="event in mock.randomEvents.slice(0, 3)"
@@ -17,24 +16,15 @@
         <span class="event-name">{{ event.name }}</span>
       </div>
     </div>
-    <button class="draw-btn" @click="drawRandom()">
-      🎴 随机抽一张
-    </button>
+    <button class="draw-btn" @click="drawRandom()">🎴 随机抽一张</button>
 
-    <!-- 分隔 -->
     <div class="divider">或</div>
 
-    <!-- 自定义事件 -->
     <div class="custom-event">
-      <input
-        v-model="customText"
-        placeholder="自定义事件..."
-        @keyup.enter="submitCustom"
-      />
+      <input v-model="customText" placeholder="自定义事件..." @keyup.enter="submitCustom" />
       <button @click="submitCustom">提交</button>
     </div>
 
-    <!-- 骰子 -->
     <div class="divider">D20 判定</div>
     <DiceRoller @result="onDiceResult" />
   </div>
@@ -49,30 +39,24 @@ import type { RandomEvent } from '../types'
 const mock = useMockStore()
 const customText = ref('')
 
-function drawRandom() {
-  mock.drawRandomEvent()
-}
-
+function drawRandom() { mock.drawRandomEvent() }
 function drawEvent(event: RandomEvent) {
   mock.currentEvent = event
   mock.drawRandomEvent()
 }
-
 function submitCustom() {
   mock.submitCustomEvent(customText.value)
   customText.value = ''
 }
-
-function onDiceResult(_value: number, _success: boolean) {
-  // handled inside DiceRoller via mock.rollDice()
-}
+function onDiceResult(_value: number, _success: boolean) {}
 </script>
 
 <style scoped>
 .event-panel {
-  background: var(--color-panel);
-  border: 2px solid var(--color-border);
   padding: var(--gap-md);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .event-panel h3 {
@@ -82,14 +66,12 @@ function onDiceResult(_value: number, _success: boolean) {
 
 .quota-label {
   font-family: var(--font-pixel);
-  font-size: 8px;
+  font-size: 12px;
   color: var(--color-text-dim);
   margin-bottom: var(--gap-sm);
 }
 
-.quota-num {
-  color: var(--color-accent);
-}
+.quota-num { color: var(--color-accent); }
 
 .event-cards {
   display: flex;
@@ -109,18 +91,16 @@ function onDiceResult(_value: number, _success: boolean) {
   transition: border-color 0.15s;
 }
 
-.event-card:hover {
-  border-color: var(--color-accent);
-}
+.event-card:hover { border-color: var(--color-accent); }
 
 .event-icon {
-  font-size: 18px;
+  font-size: 20px;
   display: block;
 }
 
 .event-name {
   font-family: var(--font-pixel);
-  font-size: 7px;
+  font-size: 9px;
   color: var(--color-text-dim);
   margin-top: 2px;
   display: block;
@@ -134,14 +114,13 @@ function onDiceResult(_value: number, _success: boolean) {
 .divider {
   text-align: center;
   font-family: var(--font-pixel);
-  font-size: 8px;
+  font-size: 12px;
   color: var(--color-text-dim);
   margin: var(--gap-sm) 0;
   position: relative;
 }
 
-.divider::before,
-.divider::after {
+.divider::before, .divider::after {
   content: '';
   position: absolute;
   top: 50%;
@@ -149,7 +128,6 @@ function onDiceResult(_value: number, _success: boolean) {
   height: 1px;
   background: var(--color-border);
 }
-
 .divider::before { left: 0; }
 .divider::after { right: 0; }
 
@@ -160,7 +138,7 @@ function onDiceResult(_value: number, _success: boolean) {
 
 .custom-event input {
   flex: 1;
-  font-size: 10px;
+  font-size: 12px;
   padding: 5px;
 }
 </style>

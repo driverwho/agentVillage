@@ -40,5 +40,15 @@ export const useGameStore = defineStore('game', () => {
     return data
   }
 
-  return { world, player, currentNPC, messages, fetchWorld, fetchPlayer, advanceTime, togglePause, sendMessage }
+  function selectNPC(npcId: string) {
+    currentNPC.value = npcId
+    messages.value = []
+  }
+
+  async function useFarmingTool() {
+    const { data } = await api.post('/api/tools/farming')
+    return data
+  }
+
+  return { world, player, currentNPC, messages, fetchWorld, fetchPlayer, advanceTime, togglePause, sendMessage, selectNPC, useFarmingTool }
 })

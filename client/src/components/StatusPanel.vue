@@ -1,5 +1,5 @@
 <template>
-  <div class="status-panel">
+  <div class="status-panel" v-show="!collapsed">
     <h3>玩家状态</h3>
     <div v-if="player" class="status-body">
       <div class="stat-row">
@@ -50,15 +50,16 @@
 import { useGameStore } from '../stores/gameStore'
 import { storeToRefs } from 'pinia'
 
+defineProps<{ collapsed: boolean }>()
+
 const store = useGameStore()
 const { player } = storeToRefs(store)
 </script>
 
 <style scoped>
 .status-panel {
-  background: var(--color-panel);
-  border: 2px solid var(--color-border);
   padding: var(--gap-md);
+  flex: 1;
 }
 
 .status-panel h3 {
@@ -110,13 +111,9 @@ const { player } = storeToRefs(store)
 .stat-fill.hunger { background: var(--color-hunger); }
 .stat-fill.fatigue { background: var(--color-fatigue); }
 
-.gold-val {
-  color: var(--color-accent-light);
-}
+.gold-val { color: var(--color-accent-light); }
 
-.relations {
-  margin-top: var(--gap-xs);
-}
+.relations { margin-top: var(--gap-xs); }
 
 .rel-row {
   display: flex;
@@ -126,9 +123,7 @@ const { player } = storeToRefs(store)
   font-size: var(--font-size-sm);
 }
 
-.rel-bar {
-  max-width: 80px;
-}
+.rel-bar { max-width: 80px; }
 
 .loading {
   color: var(--color-text-dim);

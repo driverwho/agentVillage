@@ -13,7 +13,7 @@
         :class="{ 'target-selected': selected.includes(npc.id) }"
         @click="toggleTarget(npc.id)"
       >
-        {{ npc.avatar }} {{ npc.name }}
+        <img :src="avatarSmall(npc.avatar)" :alt="npc.name" class="chip-avatar" /> {{ npc.name }}
       </div>
     </div>
 
@@ -33,6 +33,10 @@ import { useMockStore } from '../stores/mockStore'
 
 const mock = useMockStore()
 const selected = ref<string[]>([])
+
+function avatarSmall(path: string): string {
+  return path.replace('/avatars/', '/avatars/32/')
+}
 
 function toggleTarget(id: string) {
   const idx = selected.value.indexOf(id)
@@ -64,14 +68,12 @@ function doEavesdrop() {
 
 .quota-label {
   font-family: var(--font-pixel);
-  font-size: 8px;
+  font-size: 10px;
   color: var(--color-text-dim);
   margin-bottom: var(--gap-sm);
 }
 
-.quota-num {
-  color: var(--color-accent);
-}
+.quota-num { color: var(--color-accent); }
 
 .eavesdrop-targets {
   display: flex;
@@ -82,24 +84,30 @@ function doEavesdrop() {
 
 .target-chip {
   font-family: var(--font-pixel);
-  font-size: 8px;
+  font-size: 10px;
   padding: 4px 8px;
   background: var(--color-bg);
   border: 2px solid var(--color-border);
   cursor: pointer;
   transition: border-color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.target-chip:hover {
-  border-color: var(--color-border-light);
+.chip-avatar {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  image-rendering: pixelated;
 }
+
+.target-chip:hover { border-color: var(--color-border-light); }
 
 .target-selected {
   border-color: var(--color-info);
   color: var(--color-info);
 }
 
-.eavesdrop-btn {
-  width: 100%;
-}
+.eavesdrop-btn { width: 100%; }
 </style>

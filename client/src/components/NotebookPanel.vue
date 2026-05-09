@@ -2,7 +2,6 @@
   <div class="notebook-panel">
     <h3>📜 笔记簿</h3>
 
-    <!-- Tab 栏 -->
     <div class="nb-tabs">
       <button
         v-for="tab in tabs"
@@ -15,23 +14,17 @@
       </button>
     </div>
 
-    <!-- 事件时间线 -->
     <div class="nb-content" v-if="mock.notebookTab === 'timeline'">
       <div v-for="(entry, i) in mock.timeline" :key="i" class="nb-entry">
         <span class="nb-day">Day {{ entry.day }}</span>
-        <span class="nb-source" :class="'src-' + entry.source">
-          {{ sourceLabel(entry.source) }}
-        </span>
+        <span class="nb-source" :class="'src-' + entry.source">{{ sourceLabel(entry.source) }}</span>
         <span class="nb-text">{{ entry.text }}</span>
       </div>
     </div>
 
-    <!-- NPC 观察 -->
     <div class="nb-content" v-if="mock.notebookTab === 'npc'">
       <div v-for="obs in mock.npcObservations" :key="obs.npcId" class="nb-npc-group">
-        <div class="nb-npc-name">
-          {{ getNPCName(obs.npcId) }}
-        </div>
+        <div class="nb-npc-name">{{ getNPCName(obs.npcId) }}</div>
         <div v-for="(entry, i) in obs.entries" :key="i" class="nb-entry">
           <span class="nb-day">Day {{ entry.day }}</span>
           <span class="nb-text">{{ entry.text }}</span>
@@ -39,7 +32,6 @@
       </div>
     </div>
 
-    <!-- 玩家行动 -->
     <div class="nb-content" v-if="mock.notebookTab === 'actions'">
       <div v-for="(action, i) in mock.playerActions" :key="i" class="nb-entry">
         <span class="nb-day">Day {{ action.day }}</span>
@@ -72,13 +64,10 @@ function getNPCName(npcId: string): string {
 
 <style scoped>
 .notebook-panel {
-  background: var(--color-panel);
-  border: 2px solid var(--color-border);
   padding: var(--gap-md);
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 150px;
 }
 
 .notebook-panel h3 {
@@ -94,7 +83,7 @@ function getNPCName(npcId: string): string {
 
 .nb-tab {
   flex: 1;
-  font-size: 8px;
+  font-size: 12px;
   padding: 4px 6px;
   background: var(--color-bg);
   border: 2px solid var(--color-border);
@@ -111,7 +100,7 @@ function getNPCName(npcId: string): string {
   flex: 1;
   overflow-y: auto;
   max-height: 250px;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .nb-entry {
@@ -122,14 +111,14 @@ function getNPCName(npcId: string): string {
 
 .nb-day {
   font-family: var(--font-pixel);
-  font-size: 8px;
+  font-size: 12px;
   color: var(--color-accent);
   margin-right: 6px;
 }
 
 .nb-source {
   font-family: var(--font-pixel);
-  font-size: 7px;
+  font-size: 11px;
   padding: 1px 3px;
   margin-right: 4px;
 }
@@ -138,17 +127,13 @@ function getNPCName(npcId: string): string {
 .src-heard { color: var(--color-info); }
 .src-inferred { color: var(--color-hunger); }
 
-.nb-text {
-  color: var(--color-text-dim);
-}
+.nb-text { color: var(--color-text-dim); }
 
-.nb-npc-group {
-  margin-bottom: var(--gap-sm);
-}
+.nb-npc-group { margin-bottom: var(--gap-sm); }
 
 .nb-npc-name {
   font-family: var(--font-pixel);
-  font-size: 9px;
+  font-size: 11px;
   color: var(--color-accent-light);
   margin-bottom: 4px;
   padding-bottom: 2px;

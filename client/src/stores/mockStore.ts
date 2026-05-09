@@ -24,32 +24,32 @@ export const useMockStore = defineStore('mock', () => {
   // ── NPC 列表 ──
   const npcs = ref<NPCInfo[]>([
     {
-      id: 'farmer', name: '农夫·托德', role: '村庄农夫', avatar: '🧑‍🌾',
+      id: 'farmer', name: '农夫·乔治', role: '村庄农夫', avatar: '/avatars/farmer.png',
       unlocked: true, state: { health: 80, hunger: 60, fatigue: 30, mood: 70 },
       status: 'working', statusLabel: '🌾 耕作中', relationship: 35,
     },
     {
-      id: 'bartender', name: '酒保·盖斯', role: '酒馆老板', avatar: '🍺',
+      id: 'bartender', name: '酒保·盖斯', role: '酒馆老板', avatar: '/avatars/bartender.png',
       unlocked: true, state: { health: 90, hunger: 50, fatigue: 20, mood: 60 },
       status: 'working', statusLabel: '🧹 整理中', relationship: 20,
     },
     {
-      id: 'sheriff', name: '警长·巴顿', role: '治安官', avatar: '⭐',
+      id: 'sheriff', name: '警长·巴顿', role: '治安官', avatar: '/avatars/sheriff.png',
       unlocked: false, state: { health: 100, hunger: 70, fatigue: 10, mood: 80 },
       status: 'working', statusLabel: '🔒 解锁条件未知', relationship: 0,
     },
     {
-      id: 'fortune_teller', name: '占卜师·丽娜', role: '神秘占卜师', avatar: '🔮',
+      id: 'fortune_teller', name: '占卜师·丽娜', role: '神秘占卜师', avatar: '/avatars/witch.png',
       unlocked: false, state: { health: 70, hunger: 40, fatigue: 50, mood: 90 },
       status: 'working', statusLabel: '🔒 解锁条件未知', relationship: 0,
     },
     {
-      id: 'beggar', name: '流浪者·威利', role: '流浪乞丐', avatar: '🪙',
+      id: 'beggar', name: '流浪者·威利', role: '流浪乞丐', avatar: '/avatars/beggar.png',
       unlocked: false, state: { health: 40, hunger: 10, fatigue: 60, mood: 30 },
       status: 'away', statusLabel: '🔒 解锁条件未知', relationship: 0,
     },
     {
-      id: 'shopkeeper', name: '杂货商·洛克', role: '杂货店老板', avatar: '📦',
+      id: 'shopkeeper', name: '杂货商·洛克', role: '杂货店老板', avatar: '/avatars/shopkeeper.png',
       unlocked: false, state: { health: 85, hunger: 60, fatigue: 15, mood: 75 },
       status: 'working', statusLabel: '🔒 解锁条件未知', relationship: 0,
     },
@@ -93,7 +93,7 @@ export const useMockStore = defineStore('mock', () => {
   // ── 笔记簿 ──
   const timeline = ref<TimelineEntry[]>([
     { day: 1, text: '你来到了这个村庄。酒馆里，酒保·盖斯和一个陌生人做了交易。', source: 'witnessed' },
-    { day: 2, text: '农夫·托德在酒馆和酒保·盖斯吵架，摔了一个杯子。（原因不明）', source: 'witnessed' },
+    { day: 2, text: '农夫·乔治在酒馆和酒保·盖斯吵架，摔了一个杯子。（原因不明）', source: 'witnessed' },
     { day: 2, text: '听说流浪者·威利在村口捡到了一枚金币。', source: 'heard' },
   ])
 
@@ -104,10 +104,19 @@ export const useMockStore = defineStore('mock', () => {
 
   const playerActions = ref<PlayerAction[]>([
     { day: 1, text: '和酒保·盖斯闲聊，问起了村里的情况。' },
-    { day: 2, text: '帮农夫·托德耕了一上午的地。' },
+    { day: 2, text: '帮农夫·乔治耕了一上午的地。' },
   ])
 
   const notebookTab = ref<'timeline' | 'npc' | 'actions'>('timeline')
+
+  // ── 酒馆对话 ──
+  const tavernConversations = ref<{ npcId: string; name: string; avatar: string; text: string; time: string }[]>([
+    { npcId: 'bartender', name: '酒保·盖斯', avatar: '/avatars/bartender.png', text: '今晚人还不少……老规矩，麦酒一杯？', time: '18:05' },
+    { npcId: 'farmer', name: '农夫·乔治', avatar: '/avatars/farmer.png', text: '对，今天收成不错，犒劳一下自己。', time: '18:07' },
+    { npcId: 'bartender', name: '酒保·盖斯', avatar: '/avatars/bartender.png', text: '听说你在东边那块地试了新种子？长得怎么样？', time: '18:09' },
+    { npcId: 'farmer', name: '农夫·乔治', avatar: '/avatars/farmer.png', text: '还行吧，就是最近虫子多了点。对了，上次你提到的那个商人……', time: '18:12' },
+    { npcId: 'bartender', name: '酒保·盖斯', avatar: '/avatars/bartender.png', text: '嘘——（朝你这边看了一眼）这事回头再说。', time: '18:13' },
+  ])
 
   // ── 偷听 ──
   const eavesdropQuota = ref(1)
@@ -198,6 +207,7 @@ export const useMockStore = defineStore('mock', () => {
     tools,
     dailyEventQuota, randomEvents, currentEvent,
     timeline, npcObservations, playerActions, notebookTab,
+    tavernConversations,
     eavesdropQuota,
     dialogueOptionSets, optionIndex,
     updateNPCStatus,

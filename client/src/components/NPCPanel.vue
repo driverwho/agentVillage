@@ -1,8 +1,7 @@
 <template>
-  <div class="npc-panel">
+  <div class="npc-panel" v-show="!collapsed">
     <h3>村庄居民</h3>
 
-    <!-- 已解锁 NPC -->
     <div
       v-for="npc in mock.unlockedNPCs"
       :key="npc.id"
@@ -10,22 +9,12 @@
       :class="{ 'npc-card--active': npc.id === currentNPC }"
       @click="$emit('select', npc.id)"
     >
-      <div class="npc-avatar">{{ npc.avatar }}</div>
+      <div class="npc-avatar">
+        <img :src="npc.avatar" :alt="npc.name" />
+      </div>
       <div class="npc-body">
-        <div class="npc-header">
-          <span class="npc-name">{{ npc.name }}</span>
-          <span class="npc-status" :style="{ color: statusColor(npc.status) }">
-            {{ npc.statusLabel }}
-          </span>
-        </div>
-        <div class="npc-stats">
-          <span class="npc-stat">♥{{ npc.state.health }}</span>
-          <span class="npc-stat">🍖{{ npc.state.hunger }}</span>
-          <span class="npc-stat">💤{{ npc.state.fatigue }}</span>
-          <span class="npc-stat">☻{{ npc.state.mood }}</span>
-        </div>
+        <span class="npc-name">{{ npc.name }}</span>
         <div class="npc-rel" v-if="npc.relationship > 0">
-          <span class="rel-label">好感</span>
           <div class="rel-bar">
             <div class="rel-fill" :style="{ width: npc.relationship + '%' }"></div>
           </div>
@@ -34,21 +23,18 @@
       </div>
     </div>
 
-    <!-- 分隔线 -->
     <div class="locked-divider">🔒 待解锁</div>
 
-    <!-- 待解锁 NPC -->
     <div
       v-for="npc in mock.lockedNPCs"
       :key="npc.id"
       class="npc-card npc-card--locked"
     >
-      <div class="npc-avatar npc-avatar--locked">{{ npc.avatar }}</div>
+      <div class="npc-avatar npc-avatar--locked">
+        <img :src="npc.avatar" :alt="npc.name" />
+      </div>
       <div class="npc-body">
-        <div class="npc-header">
-          <span class="npc-name locked-name">{{ npc.name }}</span>
-        </div>
-        <div class="npc-status locked-status">🔒 解锁条件未知</div>
+        <span class="npc-name locked-name">{{ npc.name }}</span>
       </div>
     </div>
   </div>
@@ -58,25 +44,13 @@
 import { useGameStore } from '../stores/gameStore'
 import { useMockStore } from '../stores/mockStore'
 import { storeToRefs } from 'pinia'
-import type { NPCStatusType } from '../types'
+
+defineProps<{ collapsed: boolean }>()
+defineEmits<{ select: [npcId: string] }>()
 
 const store = useGameStore()
 const mock = useMockStore()
 const { currentNPC } = storeToRefs(store)
-
-defineEmits<{ select: [npcId: string] }>()
-
-function statusColor(status: NPCStatusType): string {
-  const map: Record<NPCStatusType, string> = {
-    working: 'var(--color-health)',
-    resting: 'var(--color-hunger)',
-    socializing: 'var(--color-info)',
-    sleeping: 'var(--color-text-dim)',
-    abnormal: 'var(--color-fatigue)',
-    away: 'var(--color-info)',
-  }
-  return map[status]
-}
 </script>
 
 <style scoped>
@@ -84,6 +58,8 @@ function statusColor(status: NPCStatusType): string {
   background: var(--color-panel);
   border: 2px solid var(--color-border);
   padding: var(--gap-md);
+  flex: 1;
+  overflow-y: auto;
 }
 
 .npc-panel h3 {
@@ -93,7 +69,7 @@ function statusColor(status: NPCStatusType): string {
 
 .npc-card {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   padding: var(--gap-sm) var(--gap-md);
   margin-bottom: var(--gap-sm);
   background: var(--color-bg);
@@ -103,51 +79,43 @@ function statusColor(status: NPCStatusType): string {
   align-items: center;
 }
 
-.npc-card:hover {
-  border-color: var(--color-border-light);
-}
-
-.npc-card--active {
-  border-color: var(--color-accent);
-}
+.npc-card:hover { border-color: var(--color-border-light); }
+.npc-card--active { border-color: var(--color-accent); }
 
 .npc-card--locked {
   opacity: 0.55;
   border-style: dashed;
   cursor: default;
 }
-
-.npc-card--locked:hover {
-  border-color: var(--color-border);
-}
+.npc-card--locked:hover { border-color: var(--color-border); }
 
 .npc-avatar {
-  width: 40px;
-  height: 40px;
+  width: 64px;
+  height: 64px;
   background: var(--color-panel);
   border: 2px solid var(--color-border);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.npc-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   image-rendering: pixelated;
 }
 
-.npc-avatar--locked {
-  filter: grayscale(70%);
-}
+.npc-avatar--locked { filter: grayscale(70%); }
 
 .npc-body {
   flex: 1;
   min-width: 0;
-}
-
-.npc-header {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 6px;
-  margin-bottom: 2px;
 }
 
 .npc-name {
@@ -157,52 +125,18 @@ function statusColor(status: NPCStatusType): string {
   white-space: nowrap;
 }
 
-.locked-name {
-  color: var(--color-text-dim);
-}
-
-.npc-status {
-  font-family: var(--font-pixel);
-  font-size: 7px;
-  white-space: nowrap;
-}
-
-.locked-status {
-  font-size: 7px;
-  color: var(--color-text-dim);
-}
-
-.npc-stats {
-  display: flex;
-  gap: var(--gap-sm);
-  flex-wrap: wrap;
-  margin-top: 2px;
-}
-
-.npc-stat {
-  font-family: var(--font-pixel);
-  font-size: var(--font-size-xs);
-  color: var(--color-text-dim);
-}
+.locked-name { color: var(--color-text-dim); }
 
 .npc-rel {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.rel-label {
-  font-family: var(--font-pixel);
-  font-size: 7px;
-  color: var(--color-text-dim);
-  flex-shrink: 0;
+  gap: 6px;
 }
 
 .rel-bar {
   flex: 1;
   max-width: 80px;
-  height: 6px;
+  height: 8px;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
 }
@@ -215,15 +149,13 @@ function statusColor(status: NPCStatusType): string {
 
 .rel-val {
   font-family: var(--font-pixel);
-  font-size: 7px;
-  color: var(--color-text-dim);
-  width: 20px;
-  text-align: right;
+  font-size: 10px;
+  color: var(--color-health);
 }
 
 .locked-divider {
   font-family: var(--font-pixel);
-  font-size: 8px;
+  font-size: 10px;
   color: var(--color-text-dim);
   margin: var(--gap-sm) 0;
   padding-bottom: 2px;
