@@ -230,12 +230,24 @@
           </div>
         </div>
 
+        <!-- Raw Request -->
+        <div class="section">
+          <div class="section-bar" @click="toggleSection(log.id + '-raw-req')">
+            <span class="section-arrow" :style="{ transform: openSections[log.id + '-raw-req'] ? 'rotate(90deg)' : '' }">▶</span>
+            <span class="section-label">▲ 请求体 (raw JSON)</span>
+          </div>
+          <div class="section-body" :style="{ display: openSections[log.id + '-raw-req'] ? 'block' : 'none' }">
+            <pre class="json-block" v-html="prettyJson(log.request_messages)"></pre>
+          </div>
+        </div>
+
         <!-- Raw Response -->
-        <div class="section open" v-if="log.success && log.response_raw">
-          <div class="section-bar">
+        <div class="section" v-if="log.success && log.response_raw">
+          <div class="section-bar" @click="toggleSection(log.id + '-raw-resp')">
+            <span class="section-arrow" :style="{ transform: openSections[log.id + '-raw-resp'] ? 'rotate(90deg)' : '' }">▶</span>
             <span class="section-label">▼ 响应体 (raw JSON)</span>
           </div>
-          <div class="section-body" style="display:block">
+          <div class="section-body" :style="{ display: openSections[log.id + '-raw-resp'] ? 'block' : 'none' }">
             <pre class="json-block" v-html="prettyJson(log.response_raw)"></pre>
           </div>
         </div>
@@ -261,6 +273,11 @@ createApp({
     const filter = ref('all')
     const openId = ref(null)
     const expandedMsg = ref(null)
+    const openSections = ref({})
+
+    function toggleSection(key) {
+      openSections.value[key] = !openSections.value[key]
+    }
 
     let ws = null
 
@@ -324,7 +341,7 @@ createApp({
     onMounted(connect)
     onUnmounted(() => { ws?.close() })
 
-    return { logs, connected, filter, openId, expandedMsg, filteredLogs, npcLabel, formatTime, toggleOpen, toggleMsgExpand, clearLogs, prettyJson }
+    return { logs, connected, filter, openId, expandedMsg, filteredLogs, npcLabel, formatTime, toggleOpen, toggleMsgExpand, clearLogs, openSections, toggleSection, prettyJson }
   }
 }).mount('#app')
 </script>
