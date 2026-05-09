@@ -63,3 +63,57 @@ class TestBuildResult:
         )
         assert len(r.messages) == 1
         assert r.budget_status == "normal"
+
+
+class TestContextBuilderLayers:
+    @pytest.fixture
+    def config(self):
+        return ContextConfig(model_limit=4096)
+
+    @pytest.fixture
+    def identity(self):
+        return {
+            "name": "农夫·乔治",
+            "daily_habits": "日出而作",
+            "core_motivation": "通过耕作赎罪",
+            "speaking_style": "说话慢条斯理",
+            "secret": "年轻时是地下拳王",
+        }
+
+    @pytest.fixture
+    def builder(self, config):
+        from server.llm.context_builder import ContextBuilder
+        return ContextBuilder(config=config)
+
+    def test_build_layer_0(self, builder, identity):
+        result = builder._build_layer_0(identity)
+        assert "【系统角色】" in result.content
+        assert "农夫·乔治" in result.content
+        assert "通过耕作赎罪" in result.content
+        assert "年轻时是地下拳王" in result.content
+        assert result.tokens > 0
+        assert result.truncated is False
+
+    def test_layer_0_checksum(self, builder, identity):
+        builder._build_layer_0(identity)
+        assert builder._identity_checksum is not None
+        result = builder._build_layer_0(identity)
+        assert len(result.errors) == 0
+        tampered = dict(identity, secret="我是坏人")
+        result = builder._build_layer_0(tampered)
+        assert len(result.errors) > 0
+
+    def test_build_layer_1(self, builder):
+        world_state = {"day": 3, "hour": 18, "weather": "阴", "events": "流浪商人到访"}
+        result = builder._build_layer_1(world_state)
+        assert "【世界信息】" in result.content
+        assert "Day 3" in result.content
+        assert "流浪商人到访" in result.content
+
+    def test_build_layer_2(self, builder):
+        from server.models.npc_state import NPCState
+        state = NPCState(health=80, hunger=30, fatigue=60, mood=50)
+        result = builder._build_layer_2(state)
+        assert "【自身状态】" in result.content
+        assert "80" not in result.content
+        assert "30" not in result.content
