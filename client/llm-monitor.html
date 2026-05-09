@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LLM Monitor — Agent Village</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg-dark: #1a1410; --bg-panel: #2a2218; --border-dark: #5c3d2e;
+    --border-light: #8b7355; --gold: #daa520; --gold-light: #ffd700;
+    --text: #e8d5b7; --text-dim: #8b7355; --health: #6b8e23; --danger: #b22222;
+    --info: #4682b4; --warn: #cd853f;
+    --font-pixel: 'Press Start 2P', 'Courier New', monospace;
+    --font-body: 'Microsoft YaHei', 'SimHei', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg-dark); color: var(--text);
+    font-family: var(--font-body); font-size: 13px; line-height: 1.5; min-height: 100vh;
+  }
+  body::after {
+    content: ''; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px);
+    pointer-events: none; z-index: 9999;
+  }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg-dark); }
+  ::-webkit-scrollbar-thumb { background: var(--border-light); }
+
+  #app { max-width: 1500px; margin: 0 auto; padding: 16px; }
+
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--bg-panel); padding: 12px 16px; margin-bottom: 12px;
+    box-shadow: 0 0 0 2px var(--border-dark), 0 0 0 3px var(--border-light);
+  }
+  .header h1 { font-family: var(--font-pixel); font-size: 14px; color: var(--gold); letter-spacing: 2px; }
+  .status { font-family: var(--font-pixel); font-size: 10px; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .dot-connected { background: var(--health); box-shadow: 0 0 6px var(--health); }
+  .dot-disconnected { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+
+  .toolbar {
+    display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;
+  }
+  .toolbar button {
+    font-family: var(--font-pixel); font-size: 9px; color: var(--text);
+    background: linear-gradient(180deg, #3a2a18 0%, #2a1a10 100%);
+    border: none; padding: 5px 12px; cursor: pointer;
+    box-shadow: 0 0 0 1px var(--border-dark), 0 0 0 2px var(--border-light);
+  }
+  .toolbar button:hover { color: var(--gold-light); }
+  .toolbar button.active { color: var(--gold-light); box-shadow: 0 0 0 1px var(--gold), 0 0 0 2px var(--gold); }
+  .toolbar .count { font-family: var(--font-pixel); font-size: 9px; color: var(--text-dim); margin-left: auto; }
+
+  .log-list { display: flex; flex-direction: column; gap: 8px; }
+
+  /* ── Log Card ── */
+  .log-card {
+    background: var(--bg-panel);
+    box-shadow: 0 0 0 1px var(--border-dark);
+    border-left: 3px solid var(--health);
+  }
+  .log-card.error-card { border-left-color: var(--danger); }
+  .log-card.fallback { border-left-color: var(--border-light); }
+
+  .log-bar {
+    display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+    cursor: pointer; user-select: none;
+  }
+  .log-bar:hover { background: rgba(255,255,255,0.02); }
+  .log-arrow {
+    font-family: var(--font-pixel); font-size: 10px; color: var(--gold);
+    width: 16px; flex-shrink: 0; transition: transform 0.15s;
+  }
+  .log-card.open .log-arrow { transform: rotate(90deg); }
+  .log-npc { font-family: var(--font-pixel); font-size: 10px; color: var(--gold); }
+  .log-model { font-size: 10px; color: var(--text-dim); }
+  .log-tokens { font-family: var(--font-pixel); font-size: 9px; color: var(--info); }
+  .log-latency { font-family: var(--font-pixel); font-size: 9px; color: var(--text-dim); }
+  .log-time { font-size: 10px; color: var(--text-dim); margin-left: auto; }
+  .log-badge {
+    font-family: var(--font-pixel); font-size: 8px; padding: 2px 6px;
+    border: 1px solid var(--danger); color: var(--danger);
+  }
+
+  /* ── Expanded Body ── */
+  .log-body { display: none; padding: 0 14px 12px; }
+  .log-card.open .log-body { display: block; }
+
+  /* ── Section ── */
+  .section { margin-top: 8px; }
+  .section-bar {
+    display: flex; align-items: center; gap: 6px; padding: 4px 8px;
+    background: rgba(0,0,0,0.2); border: 1px solid var(--border-dark);
+    cursor: pointer; user-select: none;
+  }
+  .section-bar:hover { border-color: var(--border-light); }
+  .section-arrow {
+    font-family: var(--font-pixel); font-size: 8px; color: var(--gold);
+    width: 12px; flex-shrink: 0; transition: transform 0.15s;
+  }
+  .section.open .section-arrow { transform: rotate(90deg); }
+  .section-label {
+    font-family: var(--font-pixel); font-size: 9px; color: var(--gold);
+  }
+  .section-badge {
+    font-family: var(--font-pixel); font-size: 7px; color: var(--text-dim);
+    padding: 1px 5px; border: 1px solid var(--border-dark);
+  }
+  .section-body { display: none; }
+  .section.open .section-body { display: block; }
+
+  /* ── Message Block ── */
+  .msg-block {
+    margin-top: 4px; padding: 6px 8px;
+    background: var(--bg-dark); border: 1px solid var(--border-dark);
+  }
+  .msg-block + .msg-block { margin-top: 2px; }
+  .msg-role {
+    font-family: var(--font-pixel); font-size: 8px; margin-bottom: 4px;
+    display: inline-block; padding: 1px 6px;
+  }
+  .msg-role.system { background: #2a1a2e; color: #c084fc; }
+  .msg-role.user { background: #1a2a2e; color: #60a5fa; }
+  .msg-role.assistant { background: #1a2e1a; color: #4ade80; }
+  .msg-content {
+    font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+    max-height: 200px; overflow-y: auto;
+  }
+  .msg-content.expanded { max-height: none; }
+
+  /* ── JSON Block ── */
+  .json-block {
+    margin-top: 4px; padding: 8px 10px;
+    background: #111108; border: 1px solid var(--border-dark);
+    font-family: 'Courier New', 'Consolas', monospace; font-size: 11px;
+    line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+    max-height: 300px; overflow-y: auto;
+  }
+  .json-block.expanded { max-height: none; }
+  .json-key { color: #60a5fa; }
+  .json-str { color: #4ade80; }
+  .json-num { color: #fbbf24; }
+  .json-bool { color: #f87171; }
+  .json-null { color: var(--text-dim); }
+
+  /* Expand hint */
+  .expand-hint {
+    font-family: var(--font-pixel); font-size: 7px; color: var(--border-light);
+    cursor: pointer; text-align: center; padding: 2px;
+  }
+  .expand-hint:hover { color: var(--gold); }
+
+  .empty {
+    text-align: center; padding: 60px 20px;
+    font-family: var(--font-pixel); font-size: 11px; color: var(--text-dim);
+    animation: blink 2s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0.3; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="header">
+    <h1>LLM Monitor</h1>
+    <div class="status">
+      <span class="dot" :class="connected ? 'dot-connected' : 'dot-disconnected'"></span>
+      {{ connected ? '已连接' : '断开…重连中' }}
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <button :class="{ active: filter === 'all' }" @click="filter = 'all'">全部</button>
+    <button :class="{ active: filter === 'farmer' }" @click="filter = 'farmer'">农夫</button>
+    <button :class="{ active: filter === 'bartender' }" @click="filter = 'bartender'">酒保</button>
+    <button :class="{ active: filter === 'success' }" @click="filter = 'success'">成功</button>
+    <button :class="{ active: filter === 'error' }" @click="filter = 'error'">失败</button>
+    <button @click="clearLogs">清空</button>
+    <span class="count">{{ filteredLogs.length }} / {{ logs.length }} 条</span>
+  </div>
+
+  <div class="log-list">
+    <div v-if="filteredLogs.length === 0" class="empty">等待 LLM 请求…</div>
+    <div
+      v-for="log in filteredLogs"
+      :key="log.id"
+      class="log-card"
+      :class="{ open: openId === log.id, 'error-card': !log.success, fallback: !log.success && !log.error }"
+    >
+      <!-- ── Summary Bar ── -->
+      <div class="log-bar" @click="toggleOpen(log.id)">
+        <span class="log-arrow">▶</span>
+        <span class="log-npc">{{ npcLabel(log.npc_id) }}</span>
+        <span class="log-model">{{ log.model }}</span>
+        <span class="log-latency">{{ log.latency_ms }}ms</span>
+        <span class="log-tokens">{{ log.estimated_tokens }} tok</span>
+        <span v-if="!log.success" class="log-badge">FAIL</span>
+        <span class="log-time">{{ formatTime(log.timestamp) }}</span>
+      </div>
+
+      <!-- ── Expanded Detail ── -->
+      <div class="log-body">
+        <!-- Request Messages -->
+        <div class="section open">
+          <div class="section-bar">
+            <span class="section-label">▲ 请求体 ({{ log.request_messages?.length || 0 }} msg)</span>
+          </div>
+          <div class="section-body" style="display:block">
+            <div v-for="(msg, i) in log.request_messages" :key="i" class="msg-block">
+              <span class="msg-role" :class="msg.role">{{ msg.role.toUpperCase() }}</span>
+              <div
+                class="msg-content"
+                :class="{ expanded: expandedMsg === log.id + '-' + i }"
+                ref="msgEl"
+              >
+                {{ msg.content }}
+              </div>
+              <div
+                v-if="msg.content.length > 300"
+                class="expand-hint"
+                @click.stop="toggleMsgExpand(log.id + '-' + i)"
+              >
+                {{ expandedMsg === log.id + '-' + i ? '▲ 收起' : '▼ 展开全文 (' + msg.content.length + '字符)' }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Raw Response -->
+        <div class="section open" v-if="log.success && log.response_raw">
+          <div class="section-bar">
+            <span class="section-label">▼ 响应体 (raw JSON)</span>
+          </div>
+          <div class="section-body" style="display:block">
+            <pre class="json-block" v-html="prettyJson(log.response_raw)"></pre>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <div v-if="log.error" class="msg-block" style="border-color:var(--danger);margin-top:8px">
+          <span class="msg-role" style="background:var(--danger);color:#fff">ERROR</span>
+          <div class="msg-content" style="color:var(--danger)">{{ log.error }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/vue@3.4.21/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, ref, computed, onMounted, onUnmounted } = Vue
+
+createApp({
+  setup() {
+    const logs = ref([])
+    const connected = ref(false)
+    const filter = ref('all')
+    const openId = ref(null)
+    const expandedMsg = ref(null)
+
+    let ws = null
+
+    const filteredLogs = computed(() => {
+      let list = logs.value
+      if (filter.value === 'farmer') list = list.filter(l => l.npc_id === 'farmer')
+      else if (filter.value === 'bartender') list = list.filter(l => l.npc_id === 'bartender')
+      else if (filter.value === 'success') list = list.filter(l => l.success)
+      else if (filter.value === 'error') list = list.filter(l => !l.success)
+      return list.slice().reverse()
+    })
+
+    function npcLabel(id) {
+      return { farmer: '农夫·乔治', bartender: '酒保·盖斯' }[id] || id
+    }
+
+    function formatTime(ts) {
+      const d = new Date(ts * 1000)
+      return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    }
+
+    function toggleOpen(id) {
+      openId.value = openId.value === id ? null : id
+    }
+
+    function toggleMsgExpand(key) {
+      expandedMsg.value = expandedMsg.value === key ? null : key
+    }
+
+    function clearLogs() {
+      logs.value = []
+    }
+
+    function prettyJson(obj) {
+      if (!obj) return ''
+      const json = JSON.stringify(obj, null, 2)
+      return json
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"([^"]+)":/g, '<span class="json-key">"$1"</span>:')
+        .replace(/: "([^"]*)"/g, ': <span class="json-str">"$1"</span>')
+        .replace(/: (\d+\.?\d*)/g, ': <span class="json-num">$1</span>')
+        .replace(/: (true|false)/g, ': <span class="json-bool">$1</span>')
+        .replace(/: (null)/g, ': <span class="json-null">$1</span>')
+    }
+
+    function connect() {
+      ws = new WebSocket('ws://localhost:8000/ws/llm-monitor')
+      ws.onopen = () => { connected.value = true }
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data)
+          if (msg.type === 'log' && msg.data) {
+            logs.value.push(msg.data)
+          }
+        } catch {}
+      }
+      ws.onclose = () => { connected.value = false; setTimeout(connect, 2000) }
+      ws.onerror = () => ws?.close()
+    }
+
+    onMounted(connect)
+    onUnmounted(() => { ws?.close() })
+
+    return { logs, connected, filter, openId, expandedMsg, filteredLogs, npcLabel, formatTime, toggleOpen, toggleMsgExpand, clearLogs, prettyJson }
+  }
+}).mount('#app')
+</script>
+</body>
+</html>
