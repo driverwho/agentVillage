@@ -113,7 +113,7 @@ class TestContextBuilderLayers:
         return ContextBuilder(model_limit=4096)
 
     def test_build_layer_0(self, builder, identity):
-        result = builder._build_layer_0(identity)
+        result = builder._build_layer_0(identity, {})
         assert "【系统角色】" in result.content
         assert "农夫·乔治" in result.content
         assert "通过耕作赎罪" in result.content
@@ -122,24 +122,24 @@ class TestContextBuilderLayers:
         assert result.truncated is False
 
     def test_layer_0_checksum(self, builder, identity):
-        builder._build_layer_0(identity)
+        builder._build_layer_0(identity, {})
         assert builder._identity_checksum is not None
-        result = builder._build_layer_0(identity)
+        result = builder._build_layer_0(identity, {})
         assert len(result.errors) == 0
         tampered = dict(identity, secret="我是坏人")
-        result = builder._build_layer_0(tampered)
+        result = builder._build_layer_0(tampered, {})
         assert len(result.errors) > 0
 
     def test_layer_0_custom_quota_enforced(self, identity):
         """配额可配置：30% → 10%，Layer 0 应触发超配额错误"""
         builder = ContextBuilder(model_limit=4096, layer_quotas={0: 0.10, 1: 0.05, 2: 0.05, 3: 0.10, 4: 0.25, 5: 0.25})
-        result = builder._build_layer_0(identity)
+        result = builder._build_layer_0(identity, {})
         # 角色设定通常超过 10% 配额
         assert result.tokens > builder._quota(0) or len(result.errors) == 0
 
     def test_build_layer_1(self, builder):
         world_state = {"day": 3, "hour": 18, "weather": "阴", "events": "流浪商人到访"}
-        result = builder._build_layer_1(world_state)
+        result = builder._build_layer_1(world_state, {})
         assert "【世界信息】" in result.content
         assert "Day 3" in result.content
         assert "流浪商人到访" in result.content
@@ -147,7 +147,7 @@ class TestContextBuilderLayers:
     def test_build_layer_2(self, builder):
         from server.models.npc_state import NPCState
         state = NPCState(health=80, hunger=30, fatigue=60, mood=50)
-        result = builder._build_layer_2(state)
+        result = builder._build_layer_2(state, {})
         assert "【自身状态】" in result.content
         assert "80" not in result.content
         assert "30" not in result.content
@@ -164,7 +164,7 @@ class TestContextBuilderLayer3to5:
             "summary": "最近在打听戒指的事",
             "visible_state": "看起来状态不错",
         }
-        result = builder._build_layer_3(interlocutor)
+        result = builder._build_layer_3(interlocutor, {})
         assert "【对方信息】" in result.content
         assert "玩家" in result.content
 
@@ -175,7 +175,7 @@ class TestContextBuilderLayer3to5:
             "agent_mem.md": "",
             "world.md": "",
         }
-        content, meta = builder._build_layer_4("戒指的事", files)
+        content, meta = builder._build_layer_4("戒指的事", files, {})
         assert len(content) > 0
         assert isinstance(meta, list)
 

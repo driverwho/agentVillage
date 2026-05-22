@@ -1,4 +1,9 @@
+from server.core.background_manager import BackgroundManager
 from server.core.orchestrator import Orchestrator
+
+# 确保测试前已初始化
+BackgroundManager.reset()
+BackgroundManager.init()
 
 
 def test_orchestrator_init():
