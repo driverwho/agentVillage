@@ -7,7 +7,7 @@ Thumbs.db
 .idea/
 
 # Claude Code (local settings only)
-.claude/settings.local.json
+.claude/
 
 # Node
 node_modules/
@@ -22,3 +22,4 @@ __pycache__/
 dist/
 build/
 .env
+*.md
