@@ -10,9 +10,11 @@
         :class="msg.speaker === 'player' ? 'msg-player' : 'msg-npc'"
       >
         <div class="msg-speaker">{{ msg.speaker === 'player' ? '你' : npcName }}</div>
-        <div class="msg-content">{{ msg.content }}</div>
+        <div class="msg-content">
+          {{ msg.content }}<span v-if="store.streaming && i === messages.length - 1 && msg.speaker !== 'player'" class="stream-cursor">▊</span>
+        </div>
       </div>
-      <div v-if="messages.length === 0" class="msg-empty">
+      <div v-if="messages.length === 0 && !store.streaming" class="msg-empty">
         选择左侧居民开始对话...
       </div>
     </div>
@@ -33,8 +35,9 @@
         v-model="inputText"
         @keyup.enter="send"
         placeholder="或自由输入..."
+        :disabled="streaming"
       />
-      <button @click="send">发送</button>
+      <button @click="send" :disabled="streaming">发送</button>
     </div>
   </div>
 </template>
@@ -47,7 +50,7 @@ import { storeToRefs } from 'pinia'
 
 const store = useGameStore()
 const mock = useMockStore()
-const { messages, currentNPC } = storeToRefs(store)
+const { messages, currentNPC, streaming } = storeToRefs(store)
 const inputText = ref('')
 const msgContainer = ref<HTMLElement>()
 
@@ -67,14 +70,15 @@ watch(messages, async () => {
 
 async function send() {
   const text = inputText.value.trim()
-  if (!text) return
+  if (!text || streaming.value) return
   inputText.value = ''
-  await store.sendMessage(currentNPC.value, text)
+  store.sendMessageStream(currentNPC.value, text)
   mock.advanceOptions(currentNPC.value)
 }
 
 function selectOption(opt: string) {
-  store.sendMessage(currentNPC.value, opt)
+  if (streaming.value) return
+  store.sendMessageStream(currentNPC.value, opt)
   mock.advanceOptions(currentNPC.value)
 }
 </script>
@@ -171,4 +175,20 @@ function selectOption(opt: string) {
 }
 
 .input-area input { flex: 1; }
+
+.input-area input:disabled,
+.input-area button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.stream-cursor {
+  animation: blink 0.8s step-end infinite;
+  color: var(--color-accent);
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
 </style>
