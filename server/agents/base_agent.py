@@ -1,19 +1,33 @@
-from typing import List, Dict, Optional
+from typing import List
 from server.models.npc_state import NPCState
 from server.models.messages import DialogueTurn
 from server.memory.memory_manager import MemoryManager
-from server.llm.token_budget import TokenBudget, BudgetStatus
+from server.llm.token_budget import TokenBudget
 
 
 class NPCAgent:
-    def __init__(self, agent_id: str, identity: dict, memory_base: str, budget: TokenBudget):
+    def __init__(self, agent_id: str, background: dict, memory_base: str, budget: TokenBudget):
         self.agent_id = agent_id
-        self.identity = identity
+        self.background = background
+
+        # 从 background 派生 identity（向后兼容 ContextBuilder）
+        self.identity = {
+            "id": background.get("id", agent_id),
+            "name": background.get("name", agent_id),
+            "daily_habits": background.get("daily_habits", ""),
+            "core_motivation": background.get("core_motivation", ""),
+            "secret": background.get("secret", ""),
+            "speaking_style": background.get("speaking_style", ""),
+            "visibility": tuple(background.get("visibility", ["basic"])),
+        }
+
         self.state = NPCState()
         self.memory = MemoryManager(memory_base, agent_id)
         self.budget = budget
-        self.visibility = identity.get("visibility", ["basic"])
+        self.visibility = list(self.identity.get("visibility", ("basic",)))
         self.dialogue_history: List[DialogueTurn] = []
+
+        self.memory.seed_if_empty(background)
 
     def get_visible_state(self, player_state) -> dict:
         return player_state.get_visible_state(self.visibility)
