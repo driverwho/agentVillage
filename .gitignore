@@ -22,4 +22,9 @@ __pycache__/
 dist/
 build/
 .env
-*.md
+
+# Build artifacts
+*.tsbuildinfo
+
+# Superpowers brainstorm output
+.superpowers/
