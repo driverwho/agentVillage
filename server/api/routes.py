@@ -258,3 +258,70 @@ async def use_farming_tool():
 @router.get("/player")
 async def get_player():
     return orch_mod.orch.player_state.__dict__
+
+
+@router.post("/npc/{npc_id}/turn")
+async def npc_autonomous_turn(npc_id: str):
+    """触发一次 NPC 自主决策 turn（工具系统）。
+
+    NPC 根据当前状态 + 可用工具，由 LLM 决定行为。
+    """
+    if npc_id not in orch_mod.orch.npcs:
+        raise HTTPException(status_code=404, detail="NPC not found")
+
+    npc = orch_mod.orch.npcs[npc_id]
+
+    if not hasattr(npc, "tool_registry") or npc.tool_registry is None:
+        raise HTTPException(status_code=500, detail="工具系统未初始化")
+
+    from server.tools.setup import build_policy_context
+    from server.llm.context_builder import ContextBuilder, BuildParams
+
+    game_time = orch_mod.orch.time_system.game_time
+    policy_ctx = build_policy_context(npc, game_time)
+
+    from server.config import config as game_config
+    builder = ContextBuilder.from_config(game_config)
+    world_state = {
+        "day": game_time.day,
+        "hour": game_time.hour,
+        "weather": "晴",
+        "events": "今日无事",
+    }
+    params = BuildParams(
+        identity=npc.identity,
+        npc_state=npc.state,
+        world_state=world_state,
+        interlocutor={},
+        memory_files={"agent_mem.md": npc.memory._read("agent_mem.md")},
+        dialogue_history=[],
+        current_input="现在轮到你行动了。根据当前状态和时间，选择一个合适的行为。",
+        background=npc.background,
+    )
+    build_result = builder.build(params)
+    messages = build_result.messages
+
+    policy_ctx["npc_states"] = {npc_id: npc.state}
+    try:
+        result = await npc.run_tool_turn(context=policy_ctx, messages=messages)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Turn 执行失败: {e}")
+
+    if result.get("tool_used"):
+        usage = getattr(npc, "_daily_usage", {})
+        tool_name = result["tool_used"]
+        usage[tool_name] = usage.get(tool_name, 0) + 1
+        npc._daily_usage = usage
+
+    return {
+        "npc_id": npc_id,
+        "tool_used": result.get("tool_used"),
+        "tool_result": result.get("tool_result"),
+        "text_reply": result.get("text_reply"),
+        "state_after": {
+            "health": npc.state.health,
+            "hunger": npc.state.hunger,
+            "fatigue": npc.state.fatigue,
+            "mood": npc.state.mood,
+        },
+    }

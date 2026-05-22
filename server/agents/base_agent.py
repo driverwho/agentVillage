@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict, Any, Optional
 from server.models.npc_state import NPCState
 from server.models.messages import DialogueTurn
 from server.memory.memory_manager import MemoryManager
@@ -29,6 +29,11 @@ class NPCAgent:
 
         self.memory.seed_if_empty(background)
 
+        # 工具系统（延迟注入，由 Orchestrator 初始化时设置）
+        self.tool_registry: Optional[Any] = None
+        self.tool_pipeline: Optional[Any] = None
+        self.tool_executor: Optional[Any] = None
+
     def get_visible_state(self, player_state) -> dict:
         return player_state.get_visible_state(self.visibility)
 
@@ -43,3 +48,49 @@ class NPCAgent:
         self.state.fatigue = min(100, self.state.fatigue + 5)
         if game_time.hour == 0:
             self.budget.reset()
+
+    def get_available_tools(self, context: Dict[str, Any]) -> List:
+        """通过策略管道过滤，返回当前可用工具列表。"""
+        if not self.tool_registry or not self.tool_pipeline:
+            return []
+        all_tools = self.tool_registry.get_all()
+        return self.tool_pipeline.filter(all_tools, context)
+
+    def generate_tool_schemas(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """为当前可用工具生成 function calling schemas。"""
+        available = self.get_available_tools(context)
+        return [tool.to_function_schema() for tool in available]
+
+    async def run_tool_turn(
+        self,
+        context: Dict[str, Any],
+        messages: List[Dict[str, str]],
+    ) -> Dict[str, Any]:
+        """执行一次带工具的 NPC turn。
+
+        流程：过滤可用工具 → 生成 schema → 调用 LLM → 解析响应 → 执行工具 → 返回结果
+        """
+        from server.llm.client import get_llm_client, parse_tool_calls
+
+        schemas = self.generate_tool_schemas(context)
+        client = get_llm_client()
+
+        tools_param = schemas if schemas else None
+        response = await client.chat(messages, tools=tools_param)
+
+        tool_calls = parse_tool_calls(response)
+
+        if not tool_calls:
+            text = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+            return {"tool_used": None, "tool_result": None, "text_reply": text}
+
+        results = self.tool_executor.execute_tool_calls(
+            self.agent_id, tool_calls, context
+        )
+
+        first = results[0] if results else {}
+        return {
+            "tool_used": first.get("name"),
+            "tool_result": first,
+            "text_reply": None,
+        }

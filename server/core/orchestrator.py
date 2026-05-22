@@ -41,6 +41,9 @@ class Orchestrator:
                 budget=TokenBudget(daily_limit=5000),
             )
 
+        from server.tools.setup import init_tool_system
+        init_tool_system(self.npcs)
+
     def advance_time(self, minutes: int = 60) -> None:
         # 自动取消暂停以推进时间
         if self.time_system.is_paused:

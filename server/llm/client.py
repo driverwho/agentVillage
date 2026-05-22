@@ -14,9 +14,33 @@ class LLMClient:
         self.client = httpx.AsyncClient(timeout=60.0)
         self.semaphore = asyncio.Semaphore(3)
 
-    async def chat(self, messages: List[Dict[str, str]], model: str | None = None) -> Dict[str, Any]:
-        model = model or self.model
-        payload = {"model": model, "messages": messages, "temperature": 0.7}
+    def _build_payload(
+        self,
+        messages: List[Dict[str, str]],
+        tools: List[Dict[str, Any]] | None = None,
+        tool_choice: str | None = None,
+        model: str | None = None,
+    ) -> Dict[str, Any]:
+        """构建 API 请求 payload。支持可选的 function calling 参数。"""
+        payload: Dict[str, Any] = {
+            "model": model or self.model,
+            "messages": messages,
+            "temperature": 0.7,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = tool_choice or "auto"
+        return payload
+
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: str | None = None,
+        tools: List[Dict[str, Any]] | None = None,
+        tool_choice: str | None = None,
+    ) -> Dict[str, Any]:
+        payload = self._build_payload(messages, tools=tools, tool_choice=tool_choice, model=model)
+        model = payload["model"]
         t0 = time.time()
         async with self.semaphore:
             print(f"[LLM] 请求 {model} — {len(messages)} 条消息, {sum(len(str(m.get('content',''))) for m in messages)} 字符")
@@ -37,11 +61,11 @@ class LLMClient:
             print(f"[LLM] 成功 — {elapsed:.0f}ms — 缓存命中:{cached} 未命中:{missed} ({cache_pct}) — 回复预览: {reply_preview}...")
             return data
 
-    async def chat_with_retry(self, messages: List[Dict[str, str]], model: str | None = None, retries: int = 1) -> Dict[str, Any]:
+    async def chat_with_retry(self, messages: List[Dict[str, str]], model: str | None = None, retries: int = 1, tools: List[Dict[str, Any]] | None = None, tool_choice: str | None = None) -> Dict[str, Any]:
         model = model or self.model
         for attempt in range(retries + 1):
             try:
-                return await self.chat(messages, model)
+                return await self.chat(messages, model, tools=tools, tool_choice=tool_choice)
             except Exception as e:
                 print(f"[LLM] 失败 (第{attempt+1}次): {e}")
                 if attempt == retries:
@@ -82,6 +106,34 @@ class LLMClient:
                             pass
             elapsed = (time.time() - t0) * 1000
             print(f"[LLM] 流式完成 — {elapsed:.0f}ms")
+
+
+def parse_tool_calls(response: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """从 LLM 响应中解析 tool_calls。
+
+    Returns:
+        List[{"call_id": str, "name": str, "arguments": dict}]
+        无 tool_calls 时返回空列表。
+    """
+    message = response.get("choices", [{}])[0].get("message", {})
+    raw_calls = message.get("tool_calls", [])
+    if not raw_calls:
+        return []
+
+    parsed = []
+    for call in raw_calls:
+        func = call.get("function", {})
+        args_str = func.get("arguments", "{}")
+        try:
+            args = json.loads(args_str) if isinstance(args_str, str) else args_str
+        except json.JSONDecodeError:
+            args = {}
+        parsed.append({
+            "call_id": call.get("id", ""),
+            "name": func.get("name", ""),
+            "arguments": args,
+        })
+    return parsed
 
 
 # 全局单例
