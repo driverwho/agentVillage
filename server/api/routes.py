@@ -1,7 +1,8 @@
 import json
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket
 from fastapi.responses import StreamingResponse
 import server.core.orchestrator as orch_mod
+from server.api.ws import observe_manager
 
 router = APIRouter(prefix="/api")
 
@@ -325,3 +326,44 @@ async def npc_autonomous_turn(npc_id: str):
             "mood": npc.state.mood,
         },
     }
+
+
+@router.get("/npcs/status")
+def get_npcs_status():
+    """返回所有 NPC 的当前快照（供观察页面使用）。"""
+    game_time = orch_mod.orch.time_system.game_time
+    npcs_data = {}
+    for npc_id, npc in orch_mod.orch.npcs.items():
+        npcs_data[npc_id] = {
+            "name": npc.identity.get("name", npc_id),
+            "location": npc.location,
+            "activity": {
+                "status": npc.activity_state.status,
+                "current_tool": npc.activity_state.current_tool,
+                "end_day": npc.activity_state.end_day,
+                "end_hour": npc.activity_state.end_hour,
+                "idle_reason": npc.activity_state.idle_reason,
+            },
+            "state": {
+                "health": npc.state.health,
+                "hunger": npc.state.hunger,
+                "fatigue": npc.state.fatigue,
+                "mood": npc.state.mood,
+            },
+            "llm_status": "idle",
+            "history": [],
+        }
+    return {
+        "npcs": npcs_data,
+        "game_time": game_time.to_dict(),
+    }
+
+
+@router.websocket("/ws/observe")
+async def ws_observe(websocket: WebSocket):
+    await observe_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except Exception:
+        observe_manager.disconnect(websocket)

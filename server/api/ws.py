@@ -26,3 +26,4 @@ class ConnectionManager:
 
 
 ws_manager = ConnectionManager()
+observe_manager = ConnectionManager()
