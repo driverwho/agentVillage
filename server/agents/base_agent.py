@@ -3,6 +3,7 @@ from server.models.npc_state import NPCState
 from server.models.messages import DialogueTurn
 from server.memory.memory_manager import MemoryManager
 from server.llm.token_budget import TokenBudget
+from server.core.activity_manager import ActivityState
 
 
 class NPCAgent:
@@ -33,6 +34,10 @@ class NPCAgent:
         self.tool_registry: Optional[Any] = None
         self.tool_pipeline: Optional[Any] = None
         self.tool_executor: Optional[Any] = None
+
+        # 活动状态
+        self.activity_state = ActivityState()
+        self.location: str = background.get("default_location", "home")
 
     def get_visible_state(self, player_state) -> dict:
         return player_state.get_visible_state(self.visibility)
@@ -73,6 +78,9 @@ class NPCAgent:
         from server.llm.client import get_llm_client, parse_tool_calls
 
         schemas = self.generate_tool_schemas(context)
+        available_names = [s["function"]["name"] for s in schemas]
+        print(f"[ToolTurn] NPC={self.agent_id} | 可用工具: {available_names}")
+
         client = get_llm_client()
 
         tools_param = schemas if schemas else None
@@ -82,13 +90,17 @@ class NPCAgent:
 
         if not tool_calls:
             text = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+            print(f"[ToolTurn] NPC={self.agent_id} | LLM 未调用工具，文本回复: {text[:60]}...")
             return {"tool_used": None, "tool_result": None, "text_reply": text}
+
+        print(f"[ToolTurn] NPC={self.agent_id} | LLM 选择工具: {[c['name'] for c in tool_calls]}")
 
         results = self.tool_executor.execute_tool_calls(
             self.agent_id, tool_calls, context
         )
 
         first = results[0] if results else {}
+        print(f"[ToolTurn] NPC={self.agent_id} | 执行结果: tool={first.get('name')} success={first.get('success')} | {first.get('message')}")
         return {
             "tool_used": first.get("name"),
             "tool_result": first,

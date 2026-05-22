@@ -154,3 +154,29 @@ def test_all_tools_generate_valid_schema():
         schema = tool.to_function_schema()
         assert schema["type"] == "function"
         assert schema["function"]["name"] == tool.name
+
+
+# ============================================================
+# 工具时长测试
+# ============================================================
+
+def test_all_tools_have_duration():
+    """所有 NPCTool 必须声明 duration_hours"""
+    tools = [
+        EatTool(), SleepTool(), RestTool(), MoveTool(),
+        FarmNPCTool(), BrewTool(), PatrolTool(), DivineTool(), PaintTool(),
+        GossipTool(), TradeTool(),
+    ]
+    for tool in tools:
+        assert hasattr(tool, "duration_hours"), f"{tool.name} 缺少 duration_hours"
+        assert isinstance(tool.duration_hours, int), f"{tool.name} duration_hours 应为 int"
+
+
+def test_specific_tool_durations():
+    """验证关键工具的时长设置"""
+    assert EatTool().duration_hours == 1
+    assert SleepTool().duration_hours == -1
+    assert RestTool().duration_hours == 2
+    assert MoveTool().duration_hours == 1
+    assert FarmNPCTool().duration_hours == 4
+    assert BrewTool().duration_hours == 3

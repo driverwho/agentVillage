@@ -18,6 +18,7 @@ class EatTool(NPCTool):
     category = ToolCategory.SURVIVAL
     description = "进食以恢复饱食度（+30）"
     params = []
+    duration_hours = 1
 
     def execute(self, actor_id: str, params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
         state = context["npc_states"][actor_id]
@@ -31,6 +32,7 @@ class SleepTool(NPCTool):
     category = ToolCategory.SURVIVAL
     description = "睡觉，完全恢复疲劳值"
     params = []
+    duration_hours = -1  # 动态计算：到次日 6:00
 
     def execute(self, actor_id: str, params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
         state = context["npc_states"][actor_id]
@@ -43,6 +45,7 @@ class RestTool(NPCTool):
     category = ToolCategory.SURVIVAL
     description = "休息片刻，减少疲劳值（-20）"
     params = []
+    duration_hours = 2
 
     def execute(self, actor_id: str, params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
         state = context["npc_states"][actor_id]
@@ -55,6 +58,7 @@ class MoveTool(NPCTool):
     name = "move"
     category = ToolCategory.SURVIVAL
     description = "移动到指定地点"
+    duration_hours = 1
     params = [
         ToolParam(
             name="destination",
@@ -84,6 +88,7 @@ class FarmNPCTool(NPCTool):
     category = ToolCategory.PROFESSIONAL
     description = "耕作田地，消耗体力（+15疲劳），改善心情（+5）"
     params = []
+    duration_hours = 4
 
     def execute(self, actor_id: str, params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
         state = context["npc_states"][actor_id]
@@ -101,6 +106,7 @@ class BrewTool(NPCTool):
     category = ToolCategory.PROFESSIONAL
     description = "酿造酒水，消耗体力（+10疲劳）"
     params = []
+    duration_hours = 3
 
     def execute(self, actor_id: str, params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
         state = context["npc_states"][actor_id]
@@ -117,6 +123,7 @@ class PatrolTool(NPCTool):
     category = ToolCategory.PROFESSIONAL
     description = "巡逻村庄，消耗体力（+10疲劳）"
     params = []
+    duration_hours = 3
 
     def execute(self, actor_id: str, params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
         state = context["npc_states"][actor_id]
@@ -134,6 +141,7 @@ class DivineTool(NPCTool):
     category = ToolCategory.PROFESSIONAL
     description = "进行占卜，消耗精力（+10疲劳），可能影响心情"
     params = []
+    duration_hours = 2
 
     def execute(self, actor_id: str, params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
         state = context["npc_states"][actor_id]
@@ -150,6 +158,7 @@ class PaintTool(NPCTool):
     category = ToolCategory.PROFESSIONAL
     description = "绘画创作，消耗体力（+10疲劳），提升心情（+10）"
     params = []
+    duration_hours = 3
 
     def execute(self, actor_id: str, params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
         state = context["npc_states"][actor_id]
@@ -170,6 +179,7 @@ class GossipTool(NPCTool):
     name = "gossip"
     category = ToolCategory.SOCIAL
     description = "向另一个 NPC 传播消息或八卦"
+    duration_hours = 1
     params = [
         ToolParam(name="target", type="string", description="传播对象 NPC ID"),
         ToolParam(name="content", type="string", description="八卦内容"),
@@ -190,6 +200,7 @@ class TradeTool(NPCTool):
     name = "trade"
     category = ToolCategory.SOCIAL
     description = "与另一个 NPC 或玩家进行物品交易"
+    duration_hours = 1
     params = [
         ToolParam(name="target", type="string", description="交易对象 ID"),
         ToolParam(name="item", type="string", description="交易物品描述"),

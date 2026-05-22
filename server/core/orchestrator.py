@@ -3,6 +3,7 @@ import asyncio
 from server.core.time_system import TimeSystem
 from server.core.message_bus import MessageBus
 from server.core.state_store import JsonStore
+from server.core.activity_manager import ActivityManager
 from server.models.player_state import PlayerState
 from server.agents.farmer import FarmerAgent
 from server.agents.bartender import BartenderAgent
@@ -22,6 +23,7 @@ class Orchestrator:
         self.store = JsonStore(base_path=f"data/users/{user_id}")
         self.npcs: Dict[str, Any] = {}
         self.player_state = PlayerState(name="玩家")
+        self.activity_manager = ActivityManager()
         self._auto_tick_task: asyncio.Task | None = None
         self._init_npcs()
 
@@ -45,14 +47,144 @@ class Orchestrator:
         init_tool_system(self.npcs)
 
     def advance_time(self, minutes: int = 60) -> None:
-        # 自动取消暂停以推进时间
         if self.time_system.is_paused:
             self.time_system.is_paused = False
         is_hour = self.time_system.tick(minutes)
         if is_hour:
-            for npc in self.npcs.values():
-                npc.on_hour_tick(self.time_system.game_time)
+            self._on_hour_tick()
         self._auto_save()
+
+    def _on_hour_tick(self) -> None:
+        """每小时 tick 的核心逻辑。"""
+        game_time = self.time_system.game_time
+        hour = game_time.hour
+
+        # 步骤 1: 更新所有 NPC 状态值
+        for npc in self.npcs.values():
+            npc.on_hour_tick(game_time)
+
+        # 步骤 2: 检查事件中断
+        for npc_id, npc in self.npcs.items():
+            if npc.activity_state.status != "active":
+                continue
+            reason = self.activity_manager.check_interrupts(npc.activity_state, npc.state)
+            if reason:
+                tool = npc.activity_state.current_tool
+                self.activity_manager.transition_to_idle(
+                    npc.activity_state, f"因为{reason}中断了{tool}"
+                )
+                print(f"[AutoTick] {npc_id} 被中断: {reason}")
+
+        # 步骤 3: 检查活动完成
+        for npc_id, npc in self.npcs.items():
+            if npc.activity_state.status != "active":
+                continue
+            if self.activity_manager.check_completion(npc.activity_state, game_time):
+                tool = npc.activity_state.current_tool
+                self.activity_manager.transition_to_idle(
+                    npc.activity_state, f"完成了{tool}"
+                )
+                print(f"[AutoTick] {npc_id} 完成活动: {tool}")
+
+        # 步骤 4: 检查决策点
+        if self.activity_manager.is_decision_point(hour):
+            for npc_id, npc in self.npcs.items():
+                if npc.activity_state.status == "active":
+                    tool = npc.activity_state.current_tool
+                    self.activity_manager.transition_to_idle(
+                        npc.activity_state, f"到了{hour}:00决策时间"
+                    )
+                    print(f"[AutoTick] {npc_id} 决策点中断: {hour}:00")
+
+        # 步骤 5: 对所有 idle NPC 触发自主决策
+        idle_npcs = [
+            (npc_id, npc) for npc_id, npc in self.npcs.items()
+            if npc.activity_state.status == "idle"
+        ]
+        if idle_npcs:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._run_autonomous_turns(idle_npcs))
+            except RuntimeError:
+                pass  # 无 event loop 时跳过（同步调用场景）
+
+    async def _run_autonomous_turns(self, idle_npcs: list) -> None:
+        """并发对所有 idle NPC 执行自主决策。"""
+        game_time = self.time_system.game_time
+        tasks = []
+
+        for npc_id, npc in idle_npcs:
+            if npc.budget.status.value == "exhausted":
+                print(f"[AutoTick] {npc_id} token 耗尽，默认 rest")
+                self.activity_manager.transition_to_active(
+                    npc.activity_state, "rest", 2, game_time
+                )
+                continue
+
+            tasks.append(self._single_autonomous_turn(npc_id, npc, game_time))
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _single_autonomous_turn(self, npc_id, npc, game_time) -> None:
+        """单个 NPC 的自主决策 turn。"""
+        from server.tools.setup import build_policy_context, build_autonomous_context
+        from server.llm.context_builder import ContextBuilder, BuildParams
+        from server.config import config as game_config
+
+        try:
+            builder = ContextBuilder.from_config(game_config)
+            world_state = {
+                "day": game_time.day,
+                "hour": game_time.hour,
+                "weather": "晴",
+                "events": "今日无事",
+            }
+            autonomous_input = build_autonomous_context(npc, game_time)
+            params = BuildParams(
+                identity=npc.identity,
+                npc_state=npc.state,
+                world_state=world_state,
+                interlocutor={},
+                memory_files={"agent_mem.md": npc.memory._read("agent_mem.md")},
+                dialogue_history=[],
+                current_input=autonomous_input,
+                background=npc.background,
+            )
+            build_result = builder.build(params)
+            messages = build_result.messages
+
+            policy_ctx = build_policy_context(npc, game_time)
+            policy_ctx["npc_states"] = {npc_id: npc.state}
+
+            result = await npc.run_tool_turn(context=policy_ctx, messages=messages)
+
+            tool_name = result.get("tool_used")
+            if tool_name:
+                tool = npc.tool_registry.get(tool_name)
+                duration = tool.duration_hours if tool else 1
+                if duration == -1:
+                    duration = self.activity_manager.calculate_sleep_duration(game_time.hour)
+                self.activity_manager.transition_to_active(
+                    npc.activity_state, tool_name, duration, game_time
+                )
+                if tool_name == "move" and result.get("tool_result"):
+                    new_loc = result["tool_result"].get("state_changes", {}).get("location")
+                    if new_loc:
+                        npc.location = new_loc
+            else:
+                self.activity_manager.transition_to_active(
+                    npc.activity_state, "_idle_wander", 1, game_time
+                )
+
+            print(f"[AutoTick] {npc_id} 决策完成: {npc.activity_state.current_tool} "
+                  f"(到 Day{npc.activity_state.end_day} {npc.activity_state.end_hour}:00)")
+
+        except Exception as e:
+            print(f"[AutoTick] {npc_id} 自主决策失败: {e}")
+            self.activity_manager.transition_to_active(
+                npc.activity_state, "rest", 2, game_time
+            )
 
     def _auto_save(self) -> None:
         self.store.save("world_state", {
@@ -87,7 +219,12 @@ class Orchestrator:
                         "hunger": n.state.hunger,
                         "fatigue": n.state.fatigue,
                         "mood": n.state.mood,
-                    }
+                    },
+                    "activity": {
+                        "status": n.activity_state.status,
+                        "current_tool": n.activity_state.current_tool,
+                        "location": n.location,
+                    },
                 }
                 for nid, n in self.npcs.items()
             },

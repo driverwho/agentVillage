@@ -71,3 +71,36 @@ def build_policy_context(agent, game_time, trust_level: float = 5.0) -> dict:
         "daily_usage": getattr(agent, "_daily_usage", {}),
         "daily_limits": getattr(agent, "_daily_limits", {}),
     }
+
+
+# 位置 ID → 中文名映射
+LOCATION_NAMES = {
+    "home": "家",
+    "field": "田地",
+    "tavern": "酒馆",
+    "market": "市场",
+    "church": "教堂",
+    "forest": "森林",
+}
+
+
+def build_autonomous_context(agent, game_time) -> str:
+    """构建 NPC 自主决策时的 current_input 文本。"""
+    location_cn = LOCATION_NAMES.get(agent.location, agent.location)
+    idle_reason = agent.activity_state.idle_reason
+
+    if idle_reason is None:
+        status_text = "刚起床" if game_time.hour == 6 else "空闲"
+        last_activity_text = ""
+    else:
+        status_text = "空闲"
+        last_activity_text = f"\n上一个活动：{idle_reason}"
+
+    return (
+        f"【行动指令】\n"
+        f"当前时间：Day {game_time.day}, {game_time.hour}:00\n"
+        f"你的位置：{location_cn}\n"
+        f"你的状态：{status_text}"
+        f"{last_activity_text}\n"
+        f"请从可用工具中选择你接下来要做的事情。"
+    )

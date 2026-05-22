@@ -210,3 +210,44 @@ def test_build_policy_context_from_agent():
     assert ctx["hour"] == 10
     assert ctx["trust_level"] == 7.0
     assert ctx["daily_usage"] == {"gossip": 1}
+
+
+# ============================================================
+# activity_state + location 测试
+# ============================================================
+
+def test_agent_has_activity_state():
+    reg = _make_registry()
+    agent = _make_farmer_agent(reg)
+    assert hasattr(agent, "activity_state")
+    assert agent.activity_state.status == "idle"
+
+
+def test_agent_has_location():
+    reg = _make_registry()
+    agent = _make_farmer_agent(reg)
+    assert hasattr(agent, "location")
+    assert agent.location == "home"
+
+
+def test_agent_location_from_background():
+    """如果 background 指定了 default_location，使用它"""
+    background = {
+        "id": "bartender",
+        "name": "酒保",
+        "daily_habits": "",
+        "core_motivation": "",
+        "secret": "",
+        "speaking_style": "",
+        "visibility": ["basic"],
+        "tools": ["brew"],
+        "default_location": "tavern",
+    }
+    budget = TokenBudget(daily_limit=10000)
+    agent = NPCAgent(
+        agent_id="bartender",
+        background=background,
+        memory_base="data/users/test/memory",
+        budget=budget,
+    )
+    assert agent.location == "tavern"

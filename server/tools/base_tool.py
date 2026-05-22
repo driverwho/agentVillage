@@ -34,6 +34,7 @@ class NPCTool(ABC):
     category: ToolCategory
     description: str
     params: List[ToolParam] = []
+    duration_hours: int = 1  # 执行时长（游戏小时），-1 表示动态计算
 
     @abstractmethod
     def execute(self, actor_id: str, params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
