@@ -26,14 +26,20 @@ class Orchestrator:
         self._init_npcs()
 
     def _init_npcs(self) -> None:
-        self.npcs["farmer"] = FarmerAgent(
-            memory_base=f"data/users/{self.user_id}/memory",
-            budget=TokenBudget(daily_limit=5000),
-        )
-        self.npcs["bartender"] = BartenderAgent(
-            memory_base=f"data/users/{self.user_id}/memory",
-            budget=TokenBudget(daily_limit=5000),
-        )
+        from server.core.background_manager import BackgroundManager
+
+        agent_cls = {
+            "farmer": FarmerAgent,
+            "bartender": BartenderAgent,
+        }
+        memory_base = f"data/users/{self.user_id}/memory"
+        for npc_id, cls in agent_cls.items():
+            bg = BackgroundManager.get(npc_id)
+            self.npcs[npc_id] = cls(
+                background=bg,
+                memory_base=memory_base,
+                budget=TokenBudget(daily_limit=5000),
+            )
 
     def advance_time(self, minutes: int = 60) -> None:
         # 自动取消暂停以推进时间
