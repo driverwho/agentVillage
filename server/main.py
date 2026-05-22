@@ -123,6 +123,10 @@ async def llm_monitor_endpoint(ws: WebSocket):
 
 # --- 静态文件（前端构建产物，挂载在最后避免拦截 API 路由）---
 _dist = _PROJECT_ROOT / "client" / "dist"
+_img = _PROJECT_ROOT / "img"
+
+if _img.is_dir():
+    app.mount("/img", StaticFiles(directory=str(_img)), name="images")
 
 
 @app.get("/llm-monitor")

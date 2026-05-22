@@ -3,6 +3,14 @@
     <header class="observe-header">
       <h1 class="observe-title">Agent Village — NPC 观察面板</h1>
       <div class="observe-header-right">
+        <div class="time-controls">
+          <button class="time-btn" @click="togglePause">
+            {{ gameStore.world?.is_paused ? '▶ 启动' : '⏸ 暂停' }}
+          </button>
+          <button class="time-btn" @click="advanceTime(60)">+1h</button>
+          <button class="time-btn" @click="advanceTime(360)">+6h</button>
+          <button class="time-btn" @click="advanceTime(1440)">+1天</button>
+        </div>
         <span class="ws-status" :class="wsConnected ? 'ws-on' : 'ws-off'">
           {{ wsConnected ? '● 已连接' : '○ 断开' }}
         </span>
@@ -27,14 +35,26 @@
 import { onMounted, onUnmounted, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useObserveStore } from '../stores/observeStore'
+import { useGameStore } from '../stores/gameStore'
 import NPCObserveCard from '../components/NPCObserveCard.vue'
 
 const store = useObserveStore()
+const gameStore = useGameStore()
 const { npcs, gameTime, wsConnected } = storeToRefs(store)
 
 const npcList = computed(() => Object.values(npcs.value))
 
+async function advanceTime(minutes: number) {
+  await gameStore.advanceTime(minutes)
+  await store.fetchInitialStatus()
+}
+
+async function togglePause() {
+  await gameStore.togglePause()
+}
+
 onMounted(async () => {
+  await gameStore.fetchWorld()
   await store.fetchInitialStatus()
   store.connectWebSocket()
 })
@@ -100,6 +120,26 @@ onUnmounted(() => {
 
 .back-btn:hover {
   border-color: var(--color-accent);
+}
+
+.time-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.time-btn {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  padding: 4px 8px;
+  background: var(--color-bg);
+  border: 2px solid var(--color-border);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.time-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 .observe-grid {

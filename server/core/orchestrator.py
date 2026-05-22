@@ -61,20 +61,26 @@ class Orchestrator:
         game_time = self.time_system.game_time
         hour = game_time.hour
 
+        def _broadcast(data: dict):
+            try:
+                asyncio.ensure_future(observe_manager.broadcast(data))
+            except RuntimeError:
+                pass
+
         # 步骤 1: 更新所有 NPC 状态值
         for npc in self.npcs.values():
             npc.on_hour_tick(game_time)
 
         # 广播状态更新
         for npc_id, npc in self.npcs.items():
-            asyncio.ensure_future(observe_manager.broadcast({
+            _broadcast({
                 "type": "npc_state_update",
                 "npc_id": npc_id,
                 "health": npc.state.health,
                 "hunger": npc.state.hunger,
                 "fatigue": npc.state.fatigue,
                 "mood": npc.state.mood,
-            }))
+            })
 
         # 步骤 2: 检查事件中断
         for npc_id, npc in self.npcs.items():
@@ -87,7 +93,7 @@ class Orchestrator:
                     npc.activity_state, f"因为{reason}中断了{tool}"
                 )
                 print(f"[AutoTick] {npc_id} 被中断: {reason}")
-                asyncio.ensure_future(observe_manager.broadcast({
+                _broadcast({
                     "type": "npc_activity_change",
                     "npc_id": npc_id,
                     "status": npc.activity_state.status,
@@ -96,7 +102,7 @@ class Orchestrator:
                     "end_hour": npc.activity_state.end_hour,
                     "idle_reason": npc.activity_state.idle_reason,
                     "location": npc.location,
-                }))
+                })
 
         # 步骤 3: 检查活动完成
         for npc_id, npc in self.npcs.items():
@@ -108,7 +114,7 @@ class Orchestrator:
                     npc.activity_state, f"完成了{tool}"
                 )
                 print(f"[AutoTick] {npc_id} 完成活动: {tool}")
-                asyncio.ensure_future(observe_manager.broadcast({
+                _broadcast({
                     "type": "npc_activity_change",
                     "npc_id": npc_id,
                     "status": npc.activity_state.status,
@@ -117,7 +123,7 @@ class Orchestrator:
                     "end_hour": npc.activity_state.end_hour,
                     "idle_reason": npc.activity_state.idle_reason,
                     "location": npc.location,
-                }))
+                })
 
         # 步骤 4: 检查决策点
         if self.activity_manager.is_decision_point(hour):
@@ -128,7 +134,7 @@ class Orchestrator:
                         npc.activity_state, f"到了{hour}:00决策时间"
                     )
                     print(f"[AutoTick] {npc_id} 决策点中断: {hour}:00")
-                    asyncio.ensure_future(observe_manager.broadcast({
+                    _broadcast({
                         "type": "npc_activity_change",
                         "npc_id": npc_id,
                         "status": npc.activity_state.status,
@@ -137,7 +143,7 @@ class Orchestrator:
                         "end_hour": npc.activity_state.end_hour,
                         "idle_reason": npc.activity_state.idle_reason,
                         "location": npc.location,
-                    }))
+                    })
 
         # 步骤 5: 对所有 idle NPC 触发自主决策
         idle_npcs = [
