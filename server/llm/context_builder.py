@@ -321,10 +321,8 @@ class ContextBuilder:
                     + (f" 触发条件：{trigger_cond}" if trigger_cond else "")
                 )
 
-        # 2. information_layers: 按层级注入
-        info_layers = bg.get("information_layers", {})
-        for layer_name, content in info_layers.items():
-            synthetic_parts.append(f"[{layer_name}级信息] {content}")
+        # information_layers 是外部对 NPC 的描述元数据，不是 NPC 自身记忆，
+        # 不应注入到记忆检索中
 
         augmented_files = dict(memory_files)
         if synthetic_parts:

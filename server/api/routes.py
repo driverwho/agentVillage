@@ -1,4 +1,6 @@
+import json
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 import server.core.orchestrator as orch_mod
 
 router = APIRouter(prefix="/api")
@@ -7,6 +9,73 @@ FALLBACK_REPLIES: dict[str, str] = {
     "farmer": "得去田里干活了，改天再聊。",
     "bartender": "店里忙着呢，你先坐会儿。",
 }
+
+
+def _build_messages(npc, input_text: str) -> tuple[list, object, str, int]:
+    """组装 LLM 请求消息，返回 (messages, builder, budget_status, estimated_reply_tokens)"""
+    from server.llm.context_builder import ContextBuilder, BuildParams
+    from server.config import config as game_config
+
+    model_limit = game_config.LLM_CONTEXT_LIMIT
+    if npc.budget.status.value == "warning":
+        model_limit = int(model_limit * 0.7)
+
+    builder = ContextBuilder.from_config(game_config)
+    builder.model_limit = model_limit
+
+    visible_state = npc.get_visible_state(orch_mod.orch.player_state)
+    world_state = {
+        "day": orch_mod.orch.time_system.game_time.day,
+        "hour": orch_mod.orch.time_system.game_time.hour,
+        "weather": "晴",
+        "events": "今日无事",
+    }
+
+    history_dicts = []
+    for turn in npc.dialogue_history[-10:]:
+        role = "user" if turn.speaker == "player" else "assistant"
+        history_dicts.append({"role": role, "content": turn.content})
+
+    memory_files = {
+        "agent_mem.md": npc.memory._read("agent_mem.md"),
+        "world.md": "",
+    }
+
+    params = BuildParams(
+        identity=npc.identity,
+        npc_state=npc.state,
+        world_state=world_state,
+        interlocutor={
+            "name": "玩家",
+            "summary": npc.memory.get_user_summary(),
+            "visible_state": str(visible_state) if visible_state else "",
+        },
+        memory_files=memory_files,
+        dialogue_history=history_dicts,
+        current_input=input_text,
+        background=npc.background if hasattr(npc, "background") else {},
+    )
+
+    result = builder.build(params)
+    return result.messages, builder, result.budget_status, result.audit.get("total_tokens", 0)
+
+
+def _write_audit(npc_id: str, builder, budget_status: str):
+    """异步写入审计日志（fire-and-forget）"""
+    import asyncio as _asyncio
+    try:
+        from server.llm.context_audit import ContextAudit
+        # 使用最近的 build 参数生成空审计（简化版）
+        entry = ContextAudit.format_entry(
+            npc_id=npc_id,
+            layers={},
+            total_tokens=0,
+            model_limit=builder.model_limit,
+            budget_status=budget_status,
+        )
+        _asyncio.create_task(_asyncio.to_thread(ContextAudit.write, npc_id, entry))
+    except Exception:
+        pass
 
 
 @router.post("/chat/{npc_id}")
@@ -29,86 +98,19 @@ async def chat_with_npc(npc_id: str, message: str, option: str | None = None):
     if not npc.can_interact(orch_mod.orch.time_system.game_time):
         return {"reply": "（NPC正在休息，无法交互）", "options": []}
 
-    # 组装上下文 + 调用LLM（如果API key可用）
     try:
-        from server.llm.context_builder import ContextBuilder, BuildParams
-        from server.llm.context_audit import ContextAudit
-        from server.config import config as game_config
+        messages, builder, budget_status, _audit_tokens = _build_messages(npc, input_text)
 
-        # 从配置文件加载 ContextBuilder，warning 状态时缩减上限
-        model_limit = game_config.LLM_CONTEXT_LIMIT
-        if npc.budget.status.value == "warning":
-            model_limit = int(model_limit * 0.7)
-
-        builder = ContextBuilder.from_config(game_config)
-        builder.model_limit = model_limit
-
-        visible_state = npc.get_visible_state(orch_mod.orch.player_state)
-        world_state = {
-            "day": orch_mod.orch.time_system.game_time.day,
-            "hour": orch_mod.orch.time_system.game_time.hour,
-            "weather": "晴",
-            "events": "今日无事",
-        }
-
-        # 转换dialogue_history格式
-        history_dicts = []
-        for turn in npc.dialogue_history[-10:]:
-            role = "user" if turn.speaker == "player" else "assistant"
-            history_dicts.append({"role": role, "content": turn.content})
-
-        # 读取记忆文件
-        memory_files = {
-            "user.md": npc.memory._read("user.md"),
-            "self.md": npc.memory._read("self.md"),
-            "agent_mem.md": npc.memory._read("agent_mem.md"),
-            "world.md": "",
-        }
-
-        params = BuildParams(
-            identity=npc.identity,
-            npc_state=npc.state,
-            world_state=world_state,
-            interlocutor={
-                "name": "玩家",
-                "summary": npc.memory.get_user_summary(),
-                "visible_state": str(visible_state) if visible_state else "",
-            },
-            memory_files=memory_files,
-            dialogue_history=history_dicts,
-            current_input=input_text,
-            background=npc.background if hasattr(npc, "background") else {},
-        )
-
-        result = builder.build(params)
-
-        # 疲倦模式：跳过 LLM 调用
-        if result.budget_status == "tired":
+        if budget_status == "tired":
             import random
             return {
                 "reply": random.choice(list(FALLBACK_REPLIES.values())),
                 "options": ["点头示意", "默默走开"],
             }
 
-        # 审计日志（异步写入，不阻塞）
-        import asyncio as _asyncio
-        try:
-            lay_ers = {k: v for k, v in result.audit.items() if k.startswith("L")}
-            entry = ContextAudit.format_entry(
-                npc_id=npc_id,
-                layers=lay_ers,
-                total_tokens=result.audit.get("total_tokens", 0),
-                model_limit=result.audit.get("model_limit", builder.model_limit),
-                budget_status=result.budget_status,
-            )
-            _asyncio.create_task(_asyncio.to_thread(ContextAudit.write, npc_id, entry))
-        except Exception:
-            pass
-
-        messages = result.messages
+        _write_audit(npc_id, builder, budget_status)
 
         options = []
-        # 调用LLM（兼容无API key的情况）
         import time as _time
         _t0 = _time.time()
         llm_success = True
@@ -163,6 +165,77 @@ async def chat_with_npc(npc_id: str, message: str, option: str | None = None):
             options = [opt.strip() for opt in parts[1].strip().split("\n") if opt.strip()]
 
         return {"reply": reply, "options": options}
+
+    except Exception as e:
+        return {"reply": f"（出错了: {str(e)}）", "options": []}
+
+
+@router.post("/chat/{npc_id}/stream")
+async def chat_with_npc_stream(npc_id: str, message: str, option: str | None = None):
+    """SSE 流式聊天端点"""
+    if npc_id not in orch_mod.orch.npcs:
+        raise HTTPException(status_code=404, detail="NPC not found")
+
+    npc = orch_mod.orch.npcs[npc_id]
+    input_text = option if option else message
+
+    if npc.budget.status.value == "exhausted":
+        return {"reply": FALLBACK_REPLIES.get(npc_id, "我现在很忙，晚点再聊。"), "options": []}
+
+    if not npc.can_interact(orch_mod.orch.time_system.game_time):
+        return {"reply": "（NPC正在休息，无法交互）", "options": []}
+
+    try:
+        messages, builder, budget_status, _audit_tokens = _build_messages(npc, input_text)
+
+        if budget_status == "tired":
+            import random
+            return {
+                "reply": random.choice(list(FALLBACK_REPLIES.values())),
+                "options": ["点头示意", "默默走开"],
+            }
+
+        _write_audit(npc_id, builder, budget_status)
+
+        from server.llm.client import get_llm_client
+        llm_client = get_llm_client()
+
+        async def sse_generator():
+            full_reply = ""
+            try:
+                print(f"[Chat] 流式调用 LLM — NPC: {npc_id}, 模型: {llm_client.model}, 消息数: {len(messages)}")
+                async for chunk in llm_client.chat_stream(messages):
+                    full_reply += chunk
+                    yield f"data: {json.dumps({'delta': chunk})}\n\n"
+                yield f"data: {json.dumps({'done': True})}\n\n"
+                print(f"[Chat] 流式完成 — NPC: {npc_id}, 回复长度: {len(full_reply)}")
+
+                estimated_tokens = len(full_reply) // 2
+                npc.budget.consume(estimated_tokens)
+
+                # 记录对话
+                from server.models.messages import DialogueTurn
+                npc.dialogue_history.append(DialogueTurn(speaker="player", content=input_text))
+                npc.dialogue_history.append(DialogueTurn(speaker=npc_id, content=full_reply))
+                npc.memory.add_dialogue(DialogueTurn(speaker="player", content=input_text))
+
+                # 解析选项
+                options = []
+                if "[OPTIONS]" in full_reply:
+                    parts = full_reply.split("[OPTIONS]")
+                    options = [opt.strip() for opt in parts[1].strip().split("\n") if opt.strip()]
+                yield f"data: {json.dumps({'options': options})}\n\n"
+
+            except Exception as exc:
+                import traceback
+                print(f"[Chat] 流式失败 — NPC: {npc_id}, 错误:\n{traceback.format_exc()}")
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+        return StreamingResponse(
+            sse_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     except Exception as e:
         return {"reply": f"（出错了: {str(e)}）", "options": []}

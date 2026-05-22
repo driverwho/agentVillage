@@ -1,7 +1,8 @@
 import os
 import asyncio
 import time
-from typing import List, Dict, Any
+import json
+from typing import List, Dict, Any, AsyncIterator
 import httpx
 
 
@@ -46,6 +47,41 @@ class LLMClient:
                 if attempt == retries:
                     raise
                 await asyncio.sleep(1)
+
+    async def chat_stream(self, messages: List[Dict[str, str]], model: str | None = None) -> AsyncIterator[str]:
+        """流式聊天，逐 delta 块 yield 文本内容"""
+        model = model or self.model
+        payload = {"model": model, "messages": messages, "temperature": 0.7, "stream": True}
+        t0 = time.time()
+        first_chunk = True
+        async with self.semaphore:
+            print(f"[LLM] 流式请求 {model} — {len(messages)} 条消息, {sum(len(str(m.get('content',''))) for m in messages)} 字符")
+            async with self.client.stream(
+                "POST",
+                f"{self.base_url}/v1/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                json=payload,
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        if data_str.strip() == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                if first_chunk:
+                                    first_chunk = False
+                                    elapsed = (time.time() - t0) * 1000
+                                    print(f"[LLM] 流式首包 — {elapsed:.0f}ms")
+                                yield content
+                        except json.JSONDecodeError:
+                            pass
+            elapsed = (time.time() - t0) * 1000
+            print(f"[LLM] 流式完成 — {elapsed:.0f}ms")
 
 
 # 全局单例

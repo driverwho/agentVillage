@@ -15,25 +15,12 @@ class SimpleKeywordRetriever(MemoryRetriever):
         parts = []
         meta = []
 
-        # 1. 固定加载：user.md 顶部 200 字
-        user_md = files.get("user.md", "")
-        if user_md:
-            fixed_user = user_md[:200]
-            parts.append(fixed_user)
-            meta.append({"source": "user.md", "type": "fixed"})
-
-        # 2. 固定加载：self.md 最近 3 条摘要
-        self_md = files.get("self.md", "")
-        if self_md:
-            summaries = self._extract_recent_summaries(self_md, n=3)
-            for s in summaries:
-                parts.append(s)
-                meta.append({"source": "self.md", "type": "fixed", "summary": s[:50]})
-
-        # 3. 动态检索：关键词提取 + 段落匹配
+        # 动态检索：关键词提取 + 段落匹配
+        # 只检索动态记忆文件（agent_mem.md, world.md）——
+        # 静态背景(self.md)已在 L0 系统角色中，玩家印象(user.md)已在 L3+L5
         keywords = self._extract_keywords(trigger)
         if keywords:
-            for file_key in ["agent_mem.md", "self.md", "world.md"]:
+            for file_key in ["agent_mem.md", "world.md"]:
                 content = files.get(file_key, "")
                 if content:
                     matched = self._match_paragraphs(content, keywords)

@@ -170,12 +170,10 @@ class TestContextBuilderLayer3to5:
 
     def test_build_layer_4_returns_content(self, builder):
         files = {
-            "self.md": "## Day 1\n在田里干活。\n## Day 2\n遇到商人。\n## Day 3\n听说警长丢了戒指。",
-            "user.md": "一个喜欢问问题的旅行者。",
-            "agent_mem.md": "",
+            "agent_mem.md": "## 警长\n信任等级：5/10\n共同经历：警长丢了一枚戒指，全村都在议论。\n",
             "world.md": "",
         }
-        content, meta = builder._build_layer_4("戒指的事", files, {})
+        content, meta = builder._build_layer_4("戒指", files, {})
         assert len(content) > 0
         assert isinstance(meta, list)
 

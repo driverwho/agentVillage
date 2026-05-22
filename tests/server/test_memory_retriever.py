@@ -2,30 +2,24 @@ from server.llm.memory_retriever import MemoryRetriever, SimpleKeywordRetriever
 
 
 class TestSimpleKeywordRetriever:
-    def test_fixed_load_self_summary(self):
+    def test_keyword_match_agent_mem(self):
+        """agent_mem.md 是动态记忆文件，关键词匹配命中"""
         retriever = SimpleKeywordRetriever()
         files = {
-            "self.md": (
-                "## 摘要1\nDay 1: 在田里干了一整天活。\n\n"
-                "## 摘要2\nDay 2: 遇到了流浪商人，买了一包种子。\n\n"
-                "## 摘要3\nDay 3: 听说警长丢了戒指，村里议论纷纷。\n\n"
-                "## 摘要4\nDay 4: 下雨，在家休息。"
+            "agent_mem.md": (
+                "## 酒保\n态度：尊重\n信任等级：8/10\n共同经历：酒馆老板知道乔治的过去。\n\n"
+                "## 警长\n态度：敬畏\n信任等级：5/10\n共同经历：警长丢过戒指，乔治帮忙找过。\n"
             ),
-            "user.md": "这个玩家是个陌生人，看起来对村子很好奇。经常问来问去。",
-            "agent_mem.md": "",
             "world.md": "",
         }
-        result, meta = retriever.retrieve("戒指的事", files, max_tokens=500)
-        assert "警长丢了戒指" in result
-        assert "陌生人" in result
+        result, meta = retriever.retrieve("戒指", files, max_tokens=500)
+        assert "戒指" in result
 
     def test_keyword_match_and_score(self):
         retriever = SimpleKeywordRetriever()
         files = {
-            "self.md": "## Day 1\n在后巷看到了警长。\n## Day 2\n铁匠铺着火了。\n## Day 3\n酒保和农夫吵了一架。",
-            "user.md": "一个旅行者。",
-            "agent_mem.md": "酒保: 他问了很多关于戒指的问题。\n农夫: 告诉了他村口的路。",
-            "world.md": "Day 3: 流浪商人路过村子。",
+            "agent_mem.md": "酒保: 他问了很多关于戒指的问题。\n农夫: 告诉了他村口的路。\n警长: 在后巷巡逻时发现可疑人物。",
+            "world.md": "Day 3: 流浪商人路过村子。警长在后巷盘问了他。",
         }
         result, meta = retriever.retrieve("警长在后巷干什么", files, max_tokens=500)
         assert "警长" in result
@@ -33,22 +27,19 @@ class TestSimpleKeywordRetriever:
     def test_respects_max_tokens(self):
         retriever = SimpleKeywordRetriever()
         files = {
-            "self.md": "长文本内容。" * 200,
-            "user.md": "短",
-            "agent_mem.md": "",
+            "agent_mem.md": "长文本内容。" * 200,
             "world.md": "",
         }
         result, _ = retriever.retrieve("无关查询", files, max_tokens=50)
         from server.llm.token_counter import TokenCounter
         assert TokenCounter.count(result) <= 50
 
-    def test_empty_files_returns_fixed_only(self):
+    def test_empty_files_returns_empty(self):
+        """没有动态记忆时，L4 返回空字符串（静态背景在 L0，用户印象在 L3/L5）"""
         retriever = SimpleKeywordRetriever()
         files = {
-            "self.md": "",
-            "user.md": "一个旅行者。",
             "agent_mem.md": "",
             "world.md": "",
         }
         result, _ = retriever.retrieve("你好", files, max_tokens=500)
-        assert "旅行者" in result
+        assert result == ""
