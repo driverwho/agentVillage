@@ -1,5 +1,31 @@
 from dataclasses import dataclass, field
 from typing import List, Dict, Union
+from enum import Enum
+
+
+class ScenarioType(Enum):
+    AUTONOMOUS_DECISION = "autonomous"
+    PLAYER_DIALOGUE = "dialogue"
+    NPC_INTERACTION = "npc_interaction"
+
+
+SCENARIO_LAYERS = {
+    ScenarioType.AUTONOMOUS_DECISION: {
+        "L3": False,
+        "L4_scope": "agent_only",
+        "L5": False,
+    },
+    ScenarioType.PLAYER_DIALOGUE: {
+        "L3": True,
+        "L4_scope": "full",
+        "L5": True,
+    },
+    ScenarioType.NPC_INTERACTION: {
+        "L3": True,
+        "L4_scope": "agent_only",
+        "L5": True,
+    },
+}
 
 
 # ============================================================
@@ -16,6 +42,7 @@ class BuildParams:
     dialogue_history: List[dict] = field(default_factory=list)
     current_input: str = ""
     background: dict = field(default_factory=dict)
+    scenario: ScenarioType = ScenarioType.PLAYER_DIALOGUE
 
 
 @dataclass
@@ -108,6 +135,7 @@ class ContextBuilder:
 
         audit = {}
         budget_status = "normal"
+        scenario_config = SCENARIO_LAYERS[params.scenario]
 
         bg = params.background or {}
 
@@ -126,11 +154,16 @@ class ContextBuilder:
         audit["L1"] = {"tokens": l1.tokens, "truncated": l1.truncated}
         l2 = self._build_layer_2(params.npc_state, bg)
         audit["L2"] = {"tokens": l2.tokens, "truncated": l2.truncated}
-        l3 = self._build_layer_3(params.interlocutor, bg)
+
+        if scenario_config["L3"]:
+            l3 = self._build_layer_3(params.interlocutor, bg)
+        else:
+            l3 = LayerResult(content="", tokens=0)
         audit["L3"] = {"tokens": l3.tokens, "truncated": l3.truncated}
 
-        # Step 5: Layer 4 — 记忆检索
-        l4_content, l4_meta = self._build_layer_4(params.current_input, params.memory_files, bg)
+        # Step 5: Layer 4 — 记忆检索（按场景过滤）
+        filtered_files = self._filter_memory_scope(params.memory_files, scenario_config["L4_scope"])
+        l4_content, l4_meta = self._build_layer_4(params.current_input, filtered_files, bg)
         l4_tokens = TokenCounter.count(l4_content)
         l4_quota = self._quota(4)
         l4_truncated = l4_tokens > l4_quota
@@ -143,7 +176,14 @@ class ContextBuilder:
         if remaining < self.tired_threshold:
             budget_status = "tired"
 
-        l5_result = self._build_layer_5(params.dialogue_history, params.current_input, remaining)
+        if scenario_config["L5"]:
+            l5_result = self._build_layer_5(params.dialogue_history, params.current_input, remaining)
+        else:
+            input_tokens = TokenCounter.count(params.current_input)
+            l5_result = LayerResult(
+                content=[{"role": "user", "content": params.current_input}],
+                tokens=input_tokens,
+            )
         audit["L5"] = {"tokens": l5_result.tokens, "truncated": l5_result.truncated}
 
         # Step 7: 组装 + 最终校验
@@ -299,6 +339,13 @@ class ContextBuilder:
             content = parts[0]
             tokens = TokenCounter.count(content)
         return LayerResult(content=content, tokens=tokens, truncated=truncated)
+
+    def _filter_memory_scope(self, memory_files: dict, scope: str) -> dict:
+        if scope == "full":
+            return memory_files
+        if scope == "agent_only":
+            return {k: v for k, v in memory_files.items() if "agent_mem" in k}
+        return memory_files
 
     def _build_layer_4(self, trigger: str, memory_files: dict, background: dict | None = None) -> tuple:
         quota = self._quota(4)

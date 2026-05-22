@@ -178,7 +178,7 @@ class Orchestrator:
     async def _single_autonomous_turn(self, npc_id, npc, game_time) -> None:
         """单个 NPC 的自主决策 turn。"""
         from server.tools.setup import build_policy_context, build_autonomous_context
-        from server.llm.context_builder import ContextBuilder, BuildParams
+        from server.llm.context_builder import ContextBuilder, BuildParams, ScenarioType
         from server.config import config as game_config
         from server.api.ws import observe_manager
 
@@ -198,6 +198,7 @@ class Orchestrator:
             }
             autonomous_input = build_autonomous_context(npc, game_time)
             params = BuildParams(
+                scenario=ScenarioType.AUTONOMOUS_DECISION,
                 identity=npc.identity,
                 npc_state=npc.state,
                 world_state=world_state,
