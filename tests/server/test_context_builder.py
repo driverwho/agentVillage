@@ -1,5 +1,5 @@
 import pytest
-from server.llm.context_builder import BuildParams, LayerResult, BuildResult, ContextBuilder
+from server.llm.context_builder import BuildParams, LayerResult, BuildResult, ContextBuilder, ScenarioType, SCENARIO_LAYERS
 
 
 class TestGameConfigContext:
@@ -296,3 +296,199 @@ class TestContextBuilderLayer3to5:
         # 注入词应被过滤
         all_text = " ".join(m["content"] for m in result.messages)
         assert "evil_command" not in all_text
+
+
+class TestScenarioDispatch:
+    """验证场景分流机制"""
+
+    def test_scenario_type_enum_exists(self):
+        assert ScenarioType.AUTONOMOUS_DECISION.value == "autonomous"
+        assert ScenarioType.PLAYER_DIALOGUE.value == "dialogue"
+        assert ScenarioType.NPC_INTERACTION.value == "npc_interaction"
+
+    def test_scenario_layers_config(self):
+        auto_cfg = SCENARIO_LAYERS[ScenarioType.AUTONOMOUS_DECISION]
+        assert auto_cfg["L3"] is False
+        assert auto_cfg["L5"] is False
+        assert auto_cfg["L4_scope"] == "agent_only"
+
+        dlg_cfg = SCENARIO_LAYERS[ScenarioType.PLAYER_DIALOGUE]
+        assert dlg_cfg["L3"] is True
+        assert dlg_cfg["L5"] is True
+        assert dlg_cfg["L4_scope"] == "full"
+
+        npc_cfg = SCENARIO_LAYERS[ScenarioType.NPC_INTERACTION]
+        assert npc_cfg["L3"] is True
+        assert npc_cfg["L5"] is True
+        assert npc_cfg["L4_scope"] == "agent_only"
+
+    def test_build_params_default_scenario(self):
+        p = BuildParams(
+            identity={"name": "测试"},
+            npc_state=None,
+            world_state={},
+            interlocutor={},
+            memory_files={},
+            dialogue_history=[],
+            current_input="你好",
+        )
+        assert p.scenario == ScenarioType.PLAYER_DIALOGUE
+
+    def test_build_params_explicit_scenario(self):
+        p = BuildParams(
+            scenario=ScenarioType.AUTONOMOUS_DECISION,
+            identity={"name": "测试"},
+            npc_state=None,
+            world_state={},
+            interlocutor={},
+            memory_files={},
+            dialogue_history=[],
+            current_input="选择工具",
+        )
+        assert p.scenario == ScenarioType.AUTONOMOUS_DECISION
+
+    def test_filter_memory_scope_full(self):
+        builder = ContextBuilder(model_limit=4096)
+        files = {"agent_mem.md": "关系数据", "user.md": "玩家印象", "self.md": "自我认知"}
+        result = builder._filter_memory_scope(files, "full")
+        assert result == files
+
+    def test_filter_memory_scope_agent_only(self):
+        builder = ContextBuilder(model_limit=4096)
+        files = {"agent_mem.md": "关系数据", "user.md": "玩家印象", "self.md": "自我认知"}
+        result = builder._filter_memory_scope(files, "agent_only")
+        assert "agent_mem.md" in result
+        assert "user.md" not in result
+        assert "self.md" not in result
+
+    def test_filter_memory_scope_unknown_fallback(self):
+        builder = ContextBuilder(model_limit=4096)
+        files = {"agent_mem.md": "x", "user.md": "y"}
+        result = builder._filter_memory_scope(files, "unknown_scope")
+        assert result == files
+
+    def test_build_autonomous_skips_l3(self):
+        from server.models.npc_state import NPCState
+        builder = ContextBuilder(model_limit=4096)
+        params = BuildParams(
+            scenario=ScenarioType.AUTONOMOUS_DECISION,
+            identity={
+                "name": "农夫", "daily_habits": "种地",
+                "core_motivation": "活着", "speaking_style": "朴实",
+                "secret": "无",
+            },
+            npc_state=NPCState(),
+            world_state={"day": 1, "hour": 8, "weather": "晴", "events": "无"},
+            interlocutor={},
+            memory_files={"agent_mem.md": "与酒保关系不错"},
+            dialogue_history=[],
+            current_input="【行动指令】\n请选择工具。",
+            background={},
+        )
+        result = builder.build(params)
+        all_text = " ".join(m.get("content", "") for m in result.messages)
+        assert "【对方信息】" not in all_text
+        assert "某人" not in all_text
+
+    def test_build_autonomous_l5_only_current_input(self):
+        from server.models.npc_state import NPCState
+        builder = ContextBuilder(model_limit=4096)
+        params = BuildParams(
+            scenario=ScenarioType.AUTONOMOUS_DECISION,
+            identity={
+                "name": "农夫", "daily_habits": "种地",
+                "core_motivation": "活着", "speaking_style": "朴实",
+                "secret": "无",
+            },
+            npc_state=NPCState(),
+            world_state={"day": 1, "hour": 8, "weather": "晴", "events": "无"},
+            interlocutor={},
+            memory_files={"agent_mem.md": ""},
+            dialogue_history=[
+                {"role": "user", "content": "这条不该出现"},
+            ],
+            current_input="【行动指令】\n请选择工具。",
+            background={},
+        )
+        result = builder.build(params)
+        all_text = " ".join(m.get("content", "") for m in result.messages)
+        assert "这条不该出现" not in all_text
+        assert "请选择工具" in all_text
+
+    def test_build_autonomous_l4_filters_memory(self):
+        from server.models.npc_state import NPCState
+        builder = ContextBuilder(model_limit=4096)
+        params = BuildParams(
+            scenario=ScenarioType.AUTONOMOUS_DECISION,
+            identity={
+                "name": "农夫", "daily_habits": "种地",
+                "core_motivation": "活着", "speaking_style": "朴实",
+                "secret": "无",
+            },
+            npc_state=NPCState(),
+            world_state={"day": 1, "hour": 8, "weather": "晴", "events": "无"},
+            interlocutor={},
+            memory_files={
+                "agent_mem.md": "与酒保关系密切，经常一起喝酒",
+                "user.md": "玩家是个好人，信任等级5",
+            },
+            dialogue_history=[],
+            current_input="请选择工具",
+            background={},
+        )
+        result = builder.build(params)
+        all_text = " ".join(m.get("content", "") for m in result.messages)
+        assert "玩家是个好人" not in all_text
+
+    def test_build_player_dialogue_unchanged(self):
+        from server.models.npc_state import NPCState
+        builder = ContextBuilder(model_limit=4096)
+        params = BuildParams(
+            scenario=ScenarioType.PLAYER_DIALOGUE,
+            identity={
+                "name": "农夫", "daily_habits": "种地",
+                "core_motivation": "活着", "speaking_style": "朴实",
+                "secret": "无",
+            },
+            npc_state=NPCState(),
+            world_state={"day": 1, "hour": 8, "weather": "晴", "events": "无"},
+            interlocutor={"name": "玩家", "summary": "一个旅行者"},
+            memory_files={"agent_mem.md": "", "user.md": "信任等级3"},
+            dialogue_history=[
+                {"role": "user", "content": "你好"},
+                {"role": "assistant", "content": "你好啊"},
+            ],
+            current_input="最近怎么样？",
+            background={},
+        )
+        result = builder.build(params)
+        all_text = " ".join(m.get("content", "") for m in result.messages)
+        assert "【对方信息】" in all_text
+        assert "玩家" in all_text
+
+    def test_build_npc_interaction(self):
+        from server.models.npc_state import NPCState
+        builder = ContextBuilder(model_limit=4096)
+        params = BuildParams(
+            scenario=ScenarioType.NPC_INTERACTION,
+            identity={
+                "name": "农夫", "daily_habits": "种地",
+                "core_motivation": "活着", "speaking_style": "朴实",
+                "secret": "无",
+            },
+            npc_state=NPCState(),
+            world_state={"day": 1, "hour": 8, "weather": "晴", "events": "无"},
+            interlocutor={"name": "酒保", "id": "bartender"},
+            memory_files={
+                "agent_mem.md": "与酒保经常交换八卦",
+                "user.md": "玩家喜欢钓鱼",
+            },
+            dialogue_history=[],
+            current_input="嘿，酒保，最近有什么新闻？",
+            background={},
+        )
+        result = builder.build(params)
+        all_text = " ".join(m.get("content", "") for m in result.messages)
+        assert "【对方信息】" in all_text
+        assert "酒保" in all_text
+        assert "玩家喜欢钓鱼" not in all_text

@@ -14,7 +14,7 @@ FALLBACK_REPLIES: dict[str, str] = {
 
 def _build_messages(npc, input_text: str) -> tuple[list, object, str, int]:
     """组装 LLM 请求消息，返回 (messages, builder, budget_status, estimated_reply_tokens)"""
-    from server.llm.context_builder import ContextBuilder, BuildParams
+    from server.llm.context_builder import ContextBuilder, BuildParams, ScenarioType
     from server.config import config as game_config
 
     model_limit = game_config.LLM_CONTEXT_LIMIT
@@ -43,6 +43,7 @@ def _build_messages(npc, input_text: str) -> tuple[list, object, str, int]:
     }
 
     params = BuildParams(
+        scenario=ScenarioType.PLAYER_DIALOGUE,
         identity=npc.identity,
         npc_state=npc.state,
         world_state=world_state,
@@ -276,7 +277,7 @@ async def npc_autonomous_turn(npc_id: str):
         raise HTTPException(status_code=500, detail="工具系统未初始化")
 
     from server.tools.setup import build_policy_context
-    from server.llm.context_builder import ContextBuilder, BuildParams
+    from server.llm.context_builder import ContextBuilder, BuildParams, ScenarioType
 
     game_time = orch_mod.orch.time_system.game_time
     policy_ctx = build_policy_context(npc, game_time)
@@ -290,6 +291,7 @@ async def npc_autonomous_turn(npc_id: str):
         "events": "今日无事",
     }
     params = BuildParams(
+        scenario=ScenarioType.AUTONOMOUS_DECISION,
         identity=npc.identity,
         npc_state=npc.state,
         world_state=world_state,
