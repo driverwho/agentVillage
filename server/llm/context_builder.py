@@ -9,12 +9,13 @@ from typing import List, Dict, Union
 @dataclass
 class BuildParams:
     identity: dict
-    npc_state: any
-    world_state: dict
-    interlocutor: dict
-    memory_files: dict
-    dialogue_history: List[dict]
-    current_input: str
+    npc_state: any = None
+    world_state: dict = field(default_factory=dict)
+    interlocutor: dict = field(default_factory=dict)
+    memory_files: dict = field(default_factory=dict)
+    dialogue_history: List[dict] = field(default_factory=list)
+    current_input: str = ""
+    background: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -108,8 +109,10 @@ class ContextBuilder:
         audit = {}
         budget_status = "normal"
 
+        bg = params.background or {}
+
         # Step 1: Layer 0
-        l0 = self._build_layer_0(params.identity)
+        l0 = self._build_layer_0(params.identity, bg)
         audit["L0"] = {"tokens": l0.tokens, "truncated": l0.truncated}
         if l0.errors:
             return BuildResult(
@@ -119,15 +122,15 @@ class ContextBuilder:
             )
 
         # Step 2-4: Layers 1-3
-        l1 = self._build_layer_1(params.world_state)
+        l1 = self._build_layer_1(params.world_state, bg)
         audit["L1"] = {"tokens": l1.tokens, "truncated": l1.truncated}
-        l2 = self._build_layer_2(params.npc_state)
+        l2 = self._build_layer_2(params.npc_state, bg)
         audit["L2"] = {"tokens": l2.tokens, "truncated": l2.truncated}
-        l3 = self._build_layer_3(params.interlocutor)
+        l3 = self._build_layer_3(params.interlocutor, bg)
         audit["L3"] = {"tokens": l3.tokens, "truncated": l3.truncated}
 
         # Step 5: Layer 4 — 记忆检索
-        l4_content, l4_meta = self._build_layer_4(params.current_input, params.memory_files)
+        l4_content, l4_meta = self._build_layer_4(params.current_input, params.memory_files, bg)
         l4_tokens = TokenCounter.count(l4_content)
         l4_quota = self._quota(4)
         l4_truncated = l4_tokens > l4_quota
@@ -162,8 +165,23 @@ class ContextBuilder:
     # Layer 0-5 实现
     # ============================================================
 
-    def _build_layer_0(self, identity: dict) -> LayerResult:
-        current_checksum = hash(frozenset(identity.items()))
+    @staticmethod
+    def _make_hashable(value):
+        """将不可哈希类型（如 list/dict）转为可哈希，用于 checksum 计算"""
+        if isinstance(value, list):
+            return tuple(ContextBuilder._make_hashable(v) for v in value)
+        if isinstance(value, dict):
+            return tuple(sorted((k, ContextBuilder._make_hashable(v)) for k, v in value.items()))
+        if isinstance(value, set):
+            return frozenset(value)
+        return value
+
+    def _compute_checksum(self, identity: dict) -> int:
+        hashable = tuple(sorted((k, self._make_hashable(v)) for k, v in identity.items()))
+        return hash(hashable)
+
+    def _build_layer_0(self, identity: dict, background: dict | None = None) -> LayerResult:
+        current_checksum = self._compute_checksum(identity)
         if self._identity_checksum is None:
             self._identity_checksum = current_checksum
         elif self._identity_checksum != current_checksum:
@@ -176,6 +194,13 @@ class ContextBuilder:
             f"注意：{identity.get('secret', '')}"
             f"（这是你内心的秘密，不要直接告诉别人，除非极度信任）"
         )
+
+        # 注入 quirks
+        bg = background or {}
+        quirks = bg.get("quirks", [])
+        if quirks:
+            prompt += "\n你的性格特点：\n" + "\n".join(f"- {q}" for q in quirks)
+
         content = f"【系统角色】\n{prompt}"
         tokens = TokenCounter.count(content)
         quota = self._quota(0)
@@ -183,12 +208,26 @@ class ContextBuilder:
             return LayerResult(content=content, tokens=tokens, errors=["Layer 0 exceeds quota"])
         return LayerResult(content=content, tokens=tokens)
 
-    def _build_layer_1(self, world_state: dict) -> LayerResult:
+    def _build_layer_1(self, world_state: dict, background: dict | None = None) -> LayerResult:
+        event_text = world_state.get('events', '无特殊事件')
+        weather = world_state.get('weather', '晴')
+
+        # 注入 event_reactions
+        bg = background or {}
+        event_reactions = bg.get("event_reactions", {})
+        if event_text != "无特殊事件" and event_reactions:
+            matched = []
+            for event_key, reaction in event_reactions.items():
+                if isinstance(event_key, str) and event_key in event_text.lower():
+                    matched.append(reaction)
+            if matched:
+                event_text += "。你的反应：" + "；".join(matched)
+
         content = (
             f"【世界信息】\n"
             f"当前时间：Day {world_state.get('day', '?')}, {world_state.get('hour', '?')}:00。"
-            f"天气：{world_state.get('weather', '晴')}。"
-            f"今日事件：{world_state.get('events', '无特殊事件')}。"
+            f"天气：{weather}。"
+            f"今日事件：{event_text}。"
         )
         tokens = TokenCounter.count(content)
         quota = self._quota(1)
@@ -197,17 +236,31 @@ class ContextBuilder:
             content = (
                 f"【世界信息】\n"
                 f"当前时间：Day {world_state.get('day', '?')}, {world_state.get('hour', '?')}:00。"
-                f"天气：{world_state.get('weather', '晴')}。"
+                f"天气：{weather}。"
             )
             tokens = TokenCounter.count(content)
         return LayerResult(content=content, tokens=tokens, truncated=truncated)
 
-    def _build_layer_2(self, npc_state) -> LayerResult:
+    def _build_layer_2(self, npc_state, background: dict | None = None) -> LayerResult:
         d = npc_state.describe()
         content = (
             f"【自身状态】\n"
             f"{d['health']}。{d['hunger']}。{d['fatigue']}。{d['mood']}。"
         )
+
+        # 注入 state_reactions
+        bg = background or {}
+        state_reactions = bg.get("state_reactions", {})
+        reactions = []
+        if npc_state.mood < 40 and "mood_low" in state_reactions:
+            reactions.append(state_reactions["mood_low"])
+        if npc_state.hunger < 40 and "hunger_low" in state_reactions:
+            reactions.append(state_reactions["hunger_low"])
+        if npc_state.fatigue > 60 and "fatigue_high" in state_reactions:
+            reactions.append(state_reactions["fatigue_high"])
+        if reactions:
+            content += " 由于当前状态：" + "；".join(reactions)
+
         tokens = TokenCounter.count(content)
         quota = self._quota(2)
         truncated = tokens > quota
@@ -216,12 +269,28 @@ class ContextBuilder:
             tokens = TokenCounter.count(content)
         return LayerResult(content=content, tokens=tokens, truncated=truncated)
 
-    def _build_layer_3(self, interlocutor: dict) -> LayerResult:
+    def _build_layer_3(self, interlocutor: dict, background: dict | None = None) -> LayerResult:
         parts = [f"【对方信息】\n你正在与{interlocutor.get('name', '某人')}对话。"]
-        if "summary" in interlocutor and interlocutor["summary"]:
+        if interlocutor.get("summary"):
             parts.append(f"你对ta的印象：{interlocutor['summary']}")
-        if "visible_state" in interlocutor and interlocutor["visible_state"]:
+        if interlocutor.get("visible_state"):
             parts.append(f"ta当前状态：{interlocutor['visible_state']}")
+
+        # 注入 relationships（当 interlocutor 是已知 NPC 时）
+        bg = background or {}
+        relationships = bg.get("relationships", {})
+        interlocutor_id = interlocutor.get("id", "")
+        if interlocutor_id and interlocutor_id in relationships:
+            rel = relationships[interlocutor_id]
+            if isinstance(rel, dict):
+                if rel.get("attitude"):
+                    parts.append(f"你对ta的态度：{rel['attitude']}")
+                if "trust_level" in rel:
+                    parts.append(f"信任等级：{rel['trust_level']}/10")
+                history = rel.get("shared_history", "")
+                if history:
+                    parts.append(f"共同经历：{history}")
+
         content = "\n".join(parts)
         tokens = TokenCounter.count(content)
         quota = self._quota(3)
@@ -231,9 +300,37 @@ class ContextBuilder:
             tokens = TokenCounter.count(content)
         return LayerResult(content=content, tokens=tokens, truncated=truncated)
 
-    def _build_layer_4(self, trigger: str, memory_files: dict) -> tuple:
+    def _build_layer_4(self, trigger: str, memory_files: dict, background: dict | None = None) -> tuple:
         quota = self._quota(4)
-        return self._get_retriever().retrieve(trigger, memory_files, max_tokens=quota)
+        bg = background or {}
+
+        # 从 background 构建合成记忆条目，加入检索池
+        synthetic_parts = []
+
+        # 1. dialogue_topics: 关键词匹配
+        for topic_key, topic_data in bg.get("dialogue_topics", {}).items():
+            if not isinstance(topic_data, dict):
+                continue
+            tone = topic_data.get("tone", "")
+            samples = topic_data.get("sample_lines", [])
+            trigger_cond = topic_data.get("trigger_condition", "")
+            if samples:
+                synthetic_parts.append(
+                    f"话题「{topic_key}」：语气 {tone}。"
+                    f"参考话术：{'；'.join(samples[:2])}"
+                    + (f" 触发条件：{trigger_cond}" if trigger_cond else "")
+                )
+
+        # 2. information_layers: 按层级注入
+        info_layers = bg.get("information_layers", {})
+        for layer_name, content in info_layers.items():
+            synthetic_parts.append(f"[{layer_name}级信息] {content}")
+
+        augmented_files = dict(memory_files)
+        if synthetic_parts:
+            augmented_files["_background_knowledge.md"] = "\n\n".join(synthetic_parts)
+
+        return self._get_retriever().retrieve(trigger, augmented_files, max_tokens=quota)
 
     def _build_layer_5(self, dialogue_history: list, current_input: str, remaining: int) -> LayerResult:
         messages = []

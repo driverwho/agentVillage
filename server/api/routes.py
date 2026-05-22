@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from server.core.orchestrator import orch
+import server.core.orchestrator as orch_mod
 
 router = APIRouter(prefix="/api")
 
@@ -11,10 +11,10 @@ FALLBACK_REPLIES: dict[str, str] = {
 
 @router.post("/chat/{npc_id}")
 async def chat_with_npc(npc_id: str, message: str, option: str | None = None):
-    if npc_id not in orch.npcs:
+    if npc_id not in orch_mod.orch.npcs:
         raise HTTPException(status_code=404, detail="NPC not found")
 
-    npc = orch.npcs[npc_id]
+    npc = orch_mod.orch.npcs[npc_id]
     input_text = option if option else message
 
     # Token耗尽检查
@@ -26,7 +26,7 @@ async def chat_with_npc(npc_id: str, message: str, option: str | None = None):
         return {"reply": templates.get(npc_id, "我现在很忙，晚点再聊。"), "options": []}
 
     # 夜间检查
-    if not npc.can_interact(orch.time_system.game_time):
+    if not npc.can_interact(orch_mod.orch.time_system.game_time):
         return {"reply": "（NPC正在休息，无法交互）", "options": []}
 
     # 组装上下文 + 调用LLM（如果API key可用）
@@ -43,10 +43,10 @@ async def chat_with_npc(npc_id: str, message: str, option: str | None = None):
         builder = ContextBuilder.from_config(game_config)
         builder.model_limit = model_limit
 
-        visible_state = npc.get_visible_state(orch.player_state)
+        visible_state = npc.get_visible_state(orch_mod.orch.player_state)
         world_state = {
-            "day": orch.time_system.game_time.day,
-            "hour": orch.time_system.game_time.hour,
+            "day": orch_mod.orch.time_system.game_time.day,
+            "hour": orch_mod.orch.time_system.game_time.hour,
             "weather": "晴",
             "events": "今日无事",
         }
@@ -77,6 +77,7 @@ async def chat_with_npc(npc_id: str, message: str, option: str | None = None):
             memory_files=memory_files,
             dialogue_history=history_dicts,
             current_input=input_text,
+            background=npc.background if hasattr(npc, "background") else {},
         )
 
         result = builder.build(params)
@@ -118,13 +119,17 @@ async def chat_with_npc(npc_id: str, message: str, option: str | None = None):
             from server.llm.client import get_llm_client
             client = get_llm_client()
             llm_model = client.model
+            print(f"[Chat] 调用 LLM — NPC: {npc_id}, 模型: {llm_model}, 消息数: {len(messages)}")
             resp = await client.chat_with_retry(messages)
             reply = resp["choices"][0]["message"]["content"]
             estimated_tokens = len(reply) // 2 + len(str(messages)) // 2
             npc.budget.consume(estimated_tokens)
+            print(f"[Chat] LLM 成功 — NPC: {npc_id}, 耗时: {(_time.time() - _t0)*1000:.0f}ms, 预估token: {estimated_tokens}")
         except Exception as exc:
             llm_success = False
             llm_error = str(exc)
+            import traceback
+            print(f"[Chat] LLM 失败 — NPC: {npc_id}, 错误:\n{traceback.format_exc()}")
             reply = f"{npc.identity['name']}对你点点头。"
             options = ["询问近况", "闲聊一会儿", "有事想请你帮忙"]
             estimated_tokens = 0
@@ -167,16 +172,16 @@ async def chat_with_npc(npc_id: str, message: str, option: str | None = None):
 async def use_farming_tool():
     from server.tools.farming import FarmingTool
     tool = FarmingTool()
-    can_use, reason = tool.check_preconditions(orch.player_state)
+    can_use, reason = tool.check_preconditions(orch_mod.orch.player_state)
     if not can_use:
         raise HTTPException(status_code=400, detail=reason)
 
-    far_npc = orch.npcs.get("farmer")
+    far_npc = orch_mod.orch.npcs.get("farmer")
     far_state = far_npc.state if far_npc else None
-    result = tool.execute(orch.player_state, far_state)
+    result = tool.execute(orch_mod.orch.player_state, far_state)
     return result
 
 
 @router.get("/player")
 async def get_player():
-    return orch.player_state.__dict__
+    return orch_mod.orch.player_state.__dict__
