@@ -56,7 +56,7 @@ class Orchestrator:
 
     def _on_hour_tick(self) -> None:
         """每小时 tick 的核心逻辑。"""
-        from server.api.ws import observe_manager
+        from server.api.ws import observe_manager, ws_manager
 
         game_time = self.time_system.game_time
         hour = game_time.hour
@@ -66,6 +66,22 @@ class Orchestrator:
                 asyncio.ensure_future(observe_manager.broadcast(data))
             except RuntimeError:
                 pass
+
+        def _broadcast_all(data: dict):
+            """同时广播到 observe 和主 WS。"""
+            _broadcast(data)
+            try:
+                asyncio.ensure_future(ws_manager.broadcast(data))
+            except RuntimeError:
+                pass
+
+        # 步骤 0: 广播时间更新（到所有客户端）
+        _broadcast_all({
+            "type": "game_time_update",
+            "day": game_time.day,
+            "hour": game_time.hour,
+            "minute": 0,
+        })
 
         # 步骤 1: 更新所有 NPC 状态值
         for npc in self.npcs.values():
@@ -93,6 +109,7 @@ class Orchestrator:
                     npc.activity_state, f"因为{reason}中断了{tool}"
                 )
                 print(f"[AutoTick] {npc_id} 被中断: {reason}")
+                npc.activity_log.append(f"{hour}:00 {tool} — 因为{reason}中断了{tool}")
                 _broadcast({
                     "type": "npc_activity_change",
                     "npc_id": npc_id,
@@ -114,6 +131,7 @@ class Orchestrator:
                     npc.activity_state, f"完成了{tool}"
                 )
                 print(f"[AutoTick] {npc_id} 完成活动: {tool}")
+                npc.activity_log.append(f"{hour}:00 {tool} — 完成了{tool}")
                 _broadcast({
                     "type": "npc_activity_change",
                     "npc_id": npc_id,
@@ -134,6 +152,7 @@ class Orchestrator:
                         npc.activity_state, f"到了{hour}:00决策时间"
                     )
                     print(f"[AutoTick] {npc_id} 决策点中断: {hour}:00")
+                    npc.activity_log.append(f"{hour}:00 {tool} — 到了决策时间")
                     _broadcast({
                         "type": "npc_activity_change",
                         "npc_id": npc_id,
@@ -203,7 +222,10 @@ class Orchestrator:
                 npc_state=npc.state,
                 world_state=world_state,
                 interlocutor={},
-                memory_files={"agent_mem.md": npc.memory._read("agent_mem.md")},
+                memory_files={
+                    "agent_mem.md": npc.memory._read("agent_mem.md"),
+                    "self.md": npc.memory._read("self.md"),
+                },
                 dialogue_history=[],
                 current_input=autonomous_input,
                 background=npc.background,
@@ -222,6 +244,8 @@ class Orchestrator:
                 duration = tool.duration_hours if tool else 1
                 if duration == -1:
                     duration = self.activity_manager.calculate_sleep_duration(game_time.hour)
+                if tool_name == "sleep":
+                    await _trigger_dream(npc, game_time, world_state.get("events", "今日无事"))
                 self.activity_manager.transition_to_active(
                     npc.activity_state, tool_name, duration, game_time
                 )
@@ -311,3 +335,50 @@ class Orchestrator:
                 for nid, n in self.npcs.items()
             },
         }
+
+
+def _build_dream_prompt(npc_name: str, activity_log: list, today_events: str) -> str:
+    """构建 Dream 总结 prompt。"""
+    activity_text = "\n".join(activity_log) if activity_log else "（今天没做什么特别的事）"
+
+    social_entries = [e for e in activity_log if "gossip" in e or "trade" in e]
+    social_text = "\n".join(social_entries) if social_entries else "今天没有与人交流"
+
+    events_text = today_events if today_events and today_events != "今日无事" else "今日平静无事"
+
+    return (
+        f"你是{npc_name}。现在你准备入睡，回顾今天发生的事情。\n\n"
+        f"【今日活动记录】\n{activity_text}\n\n"
+        f"【今日世界事件】\n{events_text}\n\n"
+        f"【今日社交互动】\n{social_text}\n\n"
+        f"请用第一人称写一段简短的日终回顾（3-5句话），包含：\n"
+        f"1. 今天主要做了什么\n"
+        f"2. 如果有特殊事件发生，你对此的感想\n"
+        f"3. 如果有社交互动，你对那个人的印象变化\n\n"
+        f"注意：用你自己的语气和性格来写，不要列清单。"
+    )
+
+
+async def _trigger_dream(npc, game_time, today_events: str = "今日无事") -> None:
+    """NPC 入睡时触发 dream：LLM 总结当天活动。"""
+    if not npc.activity_log:
+        return
+
+    from server.llm.client import get_llm_client
+
+    prompt = _build_dream_prompt(npc.identity["name"], npc.activity_log, today_events)
+    client = get_llm_client()
+
+    try:
+        response = await client.chat(
+            [{"role": "user", "content": prompt}],
+            model=None,
+        )
+        summary = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if summary:
+            npc.memory.write_daily_summary(game_time.day, summary.strip())
+            print(f"[Dream] {npc.agent_id} Day{game_time.day} 总结已写入: {summary[:50]}...")
+    except Exception as e:
+        print(f"[Dream] {npc.agent_id} 总结失败: {e}")
+
+    npc.activity_log.clear()

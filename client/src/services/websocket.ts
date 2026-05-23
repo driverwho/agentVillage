@@ -1,7 +1,11 @@
-type MessageHandler = (msg: { type: string; data: any }) => void
+type MessageHandler = (msg: any) => void
 
-const WS_URL = 'ws://localhost:8000/ws'
 const RECONNECT_DELAY = 3000
+
+function getWsUrl(): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}/ws`
+}
 
 let ws: WebSocket | null = null
 let handler: MessageHandler | null = null
@@ -17,7 +21,7 @@ export function connect(onMessage: MessageHandler): void {
 function _connect(): void {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
 
-  ws = new WebSocket(WS_URL)
+  ws = new WebSocket(getWsUrl())
 
   ws.onopen = () => {
     console.log('[WS] connected')

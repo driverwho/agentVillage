@@ -4,46 +4,54 @@
 ToolPolicyPipeline 按顺序执行所有门，每层结果作为下层输入。
 """
 
-from typing import List, Dict, Any, Protocol
+from typing import List, Dict, Any, Protocol, Tuple
 
 from server.tools.base_tool import NPCTool, ToolCategory
 
 
 class PolicyGate(Protocol):
-    def filter(self, tools: List[NPCTool], context: Dict[str, Any]) -> List[NPCTool]: ...
+    def filter(self, tools: List[NPCTool], context: Dict[str, Any]) -> Tuple[List[NPCTool], Dict[str, str]]:
+        """返回 (过滤后工具列表, {被移除工具名: 原因})"""
+        ...
 
 
 class IdentityGate:
     """第 1 层：身份门。只允许 NPC 使用其角色对应的职业工具。"""
 
-    def filter(self, tools: List[NPCTool], context: Dict[str, Any]) -> List[NPCTool]:
+    def filter(self, tools: List[NPCTool], context: Dict[str, Any]) -> Tuple[List[NPCTool], Dict[str, str]]:
         allowed_prof = set(context.get("allowed_professional", []))
         result = []
+        removed = {}
         for tool in tools:
             if tool.category == ToolCategory.PROFESSIONAL:
                 if tool.name in allowed_prof:
                     result.append(tool)
+                else:
+                    removed[tool.name] = f"身份门: 不在允许列表 {sorted(allowed_prof)} 中"
             else:
                 result.append(tool)
-        return result
+        return result, removed
 
 
 class StateGate:
     """第 2 层：状态门。根据 NPC 当前状态过滤不适合的工具。"""
 
-    def filter(self, tools: List[NPCTool], context: Dict[str, Any]) -> List[NPCTool]:
+    def filter(self, tools: List[NPCTool], context: Dict[str, Any]) -> Tuple[List[NPCTool], Dict[str, str]]:
         state = context.get("npc_state")
         if state is None:
-            return tools
+            return tools, {}
 
         result = []
+        removed = {}
         for tool in tools:
             if state.fatigue > 80 and tool.category == ToolCategory.SOCIAL:
+                removed[tool.name] = f"状态门: fatigue={state.fatigue}>80, 社交工具禁用"
                 continue
-            if state.mood < 20 and tool.category == ToolCategory.PROFESSIONAL:
+            if state.mood < 0 and tool.category == ToolCategory.PROFESSIONAL:
+                removed[tool.name] = f"状态门: mood={state.mood}<0, 职业工具禁用"
                 continue
             result.append(tool)
-        return result
+        return result, removed
 
 
 class RelationshipGate:
@@ -51,47 +59,63 @@ class RelationshipGate:
 
     SOCIAL_TRUST_THRESHOLD = 3
 
-    def filter(self, tools: List[NPCTool], context: Dict[str, Any]) -> List[NPCTool]:
+    def filter(self, tools: List[NPCTool], context: Dict[str, Any]) -> Tuple[List[NPCTool], Dict[str, str]]:
         trust = context.get("trust_level")
         if trust is None or trust >= self.SOCIAL_TRUST_THRESHOLD:
-            return tools
+            return tools, {}
 
-        return [t for t in tools if t.category != ToolCategory.SOCIAL]
+        result = []
+        removed = {}
+        for tool in tools:
+            if tool.category == ToolCategory.SOCIAL:
+                removed[tool.name] = f"关系门: trust={trust}<{self.SOCIAL_TRUST_THRESHOLD}"
+            else:
+                result.append(tool)
+        return result, removed
 
 
 class TimeGate:
     """第 4 层：时间门。22:00-06:00 禁止职业工具。"""
 
-    def filter(self, tools: List[NPCTool], context: Dict[str, Any]) -> List[NPCTool]:
+    def filter(self, tools: List[NPCTool], context: Dict[str, Any]) -> Tuple[List[NPCTool], Dict[str, str]]:
         hour = context.get("hour")
         if hour is None:
-            return tools
+            return tools, {}
 
         is_night = hour >= 22 or hour < 6
         if not is_night:
-            return tools
+            return tools, {}
 
-        return [t for t in tools if t.category != ToolCategory.PROFESSIONAL]
+        result = []
+        removed = {}
+        for tool in tools:
+            if tool.category == ToolCategory.PROFESSIONAL:
+                removed[tool.name] = f"时间门: hour={hour}, 夜间禁止职业工具"
+            else:
+                result.append(tool)
+        return result, removed
 
 
 class QuotaGate:
     """第 5 层：配额门。每日使用次数超限的工具被移除。"""
 
-    def filter(self, tools: List[NPCTool], context: Dict[str, Any]) -> List[NPCTool]:
+    def filter(self, tools: List[NPCTool], context: Dict[str, Any]) -> Tuple[List[NPCTool], Dict[str, str]]:
         daily_usage = context.get("daily_usage", {})
         daily_limits = context.get("daily_limits", {})
         if not daily_limits:
-            return tools
+            return tools, {}
 
         result = []
+        removed = {}
         for tool in tools:
             limit = daily_limits.get(tool.name)
             if limit is not None:
                 used = daily_usage.get(tool.name, 0)
                 if used >= limit:
+                    removed[tool.name] = f"配额门: 已用{used}/{limit}次"
                     continue
             result.append(tool)
-        return result
+        return result, removed
 
 
 class ToolPolicyPipeline:
@@ -108,6 +132,12 @@ class ToolPolicyPipeline:
 
     def filter(self, tools: List[NPCTool], context: Dict[str, Any]) -> List[NPCTool]:
         result = list(tools)
+        all_removed: Dict[str, str] = {}
         for gate in self.gates:
-            result = gate.filter(result, context)
+            result, removed = gate.filter(result, context)
+            all_removed.update(removed)
+        actor = context.get("actor_id", "?")
+        if all_removed:
+            reasons = [f"{name}({reason})" for name, reason in sorted(all_removed.items())]
+            print(f"[ToolPolicy] actor={actor} | 过滤移除: {reasons} | 剩余: {[t.name for t in result]}")
         return result

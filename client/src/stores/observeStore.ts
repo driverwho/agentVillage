@@ -89,6 +89,13 @@ export const useObserveStore = defineStore('observe', () => {
   }
 
   function handleMessage(msg: any) {
+    if (msg.type === 'game_time_update') {
+      if (msg.day !== undefined) {
+        gameTime.value = { day: msg.day, hour: msg.hour, minute: msg.minute || 0 }
+      }
+      return
+    }
+
     const npcId = msg.npc_id
     if (!npcId || !npcs[npcId]) return
 
@@ -130,12 +137,6 @@ export const useObserveStore = defineStore('observe', () => {
         })
         if (npcs[npcId].history.length > 5) {
           npcs[npcId].history.pop()
-        }
-        break
-
-      case 'game_time_update':
-        if (msg.day !== undefined) {
-          gameTime.value = { day: msg.day, hour: msg.hour, minute: msg.minute || 0 }
         }
         break
     }

@@ -38,6 +38,7 @@ class NPCAgent:
         # 活动状态
         self.activity_state = ActivityState()
         self.location: str = background.get("default_location", "home")
+        self.activity_log: List[str] = []
 
     def get_visible_state(self, player_state) -> dict:
         return player_state.get_visible_state(self.visibility)
@@ -50,7 +51,9 @@ class NPCAgent:
 
     def on_hour_tick(self, game_time) -> None:
         self.state.hunger = max(0, self.state.hunger - 5)
-        self.state.fatigue = min(100, self.state.fatigue + 5)
+        current_tool = self.activity_state.current_tool
+        if current_tool not in ("rest", "sleep", "eat"):
+            self.state.fatigue = min(100, self.state.fatigue + 2)
         if game_time.hour == 0:
             self.budget.reset()
 
@@ -75,6 +78,7 @@ class NPCAgent:
 
         流程：过滤可用工具 → 生成 schema → 调用 LLM → 解析响应 → 执行工具 → 返回结果
         """
+        import time as _time
         from server.llm.client import get_llm_client, parse_tool_calls
 
         schemas = self.generate_tool_schemas(context)
@@ -84,7 +88,25 @@ class NPCAgent:
         client = get_llm_client()
 
         tools_param = schemas if schemas else None
+        _t0 = _time.time()
         response = await client.chat(messages, tools=tools_param)
+        _latency = (_time.time() - _t0) * 1000
+
+        # 记录到 LLM monitor
+        try:
+            from server.llm.request_logger import llm_logger
+            usage = response.get("usage", {})
+            llm_logger.log(
+                npc_id=self.agent_id,
+                model=client.model,
+                request_messages=list(messages),
+                response_raw=response,
+                estimated_tokens=usage.get("total_tokens", 0),
+                latency_ms=_latency,
+                success=True,
+            )
+        except Exception:
+            pass
 
         tool_calls = parse_tool_calls(response)
 
