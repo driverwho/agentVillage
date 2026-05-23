@@ -32,6 +32,13 @@ export interface GameTimeData {
   minute: number
 }
 
+export interface WorldEvent {
+  id: string
+  name: string
+  description: string
+  started_hour: number
+}
+
 const AVATAR_MAP: Record<string, string> = {
   farmer: '/img/128/farmer.png',
   bartender: '/img/128/bartender.png',
@@ -44,12 +51,16 @@ const AVATAR_MAP: Record<string, string> = {
 export const useObserveStore = defineStore('observe', () => {
   const npcs = reactive<Record<string, NPCObserveData>>({})
   const gameTime = ref<GameTimeData>({ day: 1, hour: 6, minute: 0 })
+  const worldEvents = ref<WorldEvent[]>([])
   const wsConnected = ref(false)
   let ws: WebSocket | null = null
 
   async function fetchInitialStatus() {
     const { data } = await api.get('/api/npcs/status')
     gameTime.value = data.game_time
+    if (data.world_events) {
+      worldEvents.value = data.world_events
+    }
     for (const [npcId, npcData] of Object.entries(data.npcs as Record<string, any>)) {
       npcs[npcId] = {
         id: npcId,
@@ -93,6 +104,11 @@ export const useObserveStore = defineStore('observe', () => {
       if (msg.day !== undefined) {
         gameTime.value = { day: msg.day, hour: msg.hour, minute: msg.minute || 0 }
       }
+      return
+    }
+
+    if (msg.type === 'world_events_update') {
+      worldEvents.value = msg.events || []
       return
     }
 
@@ -149,5 +165,5 @@ export const useObserveStore = defineStore('observe', () => {
     }
   }
 
-  return { npcs, gameTime, wsConnected, fetchInitialStatus, connectWebSocket, disconnect }
+  return { npcs, gameTime, wsConnected, worldEvents, fetchInitialStatus, connectWebSocket, disconnect }
 })
