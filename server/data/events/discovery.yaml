@@ -1,0 +1,37 @@
+category: discovery
+events:
+  - id: old_relic
+    name: "旧物出土"
+    probability: 0.06
+    duration_hours: 24
+    conditions:
+      min_day: 3
+      cooldown_days: 7
+    description: "有人在田里翻出了一件锈迹斑斑的古老物件，看起来年代久远。"
+
+  - id: well_discolor
+    name: "井水变色"
+    probability: 0.04
+    duration_hours: 12
+    conditions:
+      min_day: 4
+      cooldown_days: 10
+    description: "村中水井的水变成了淡淡的铁锈色，喝起来有股金属味。"
+
+  - id: strange_plant
+    name: "异常植物"
+    probability: 0.05
+    duration_hours: 48
+    conditions:
+      min_day: 3
+      cooldown_days: 8
+    description: "田地边缘长出了一株从未见过的植物，叶片在夜间隐隐发光。"
+
+  - id: distant_smoke
+    name: "远处浓烟"
+    probability: 0.07
+    duration_hours: 6
+    conditions:
+      min_day: 2
+      cooldown_days: 5
+    description: "远处山头升起了浓烟，不像是普通的炊烟，但也不像森林大火。"

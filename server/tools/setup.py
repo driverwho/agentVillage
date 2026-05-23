@@ -84,7 +84,7 @@ LOCATION_NAMES = {
 }
 
 
-def build_autonomous_context(agent, game_time) -> str:
+def build_autonomous_context(agent, game_time, location_registry=None, event_engine=None) -> str:
     """构建 NPC 自主决策时的 current_input 文本。"""
     location_cn = LOCATION_NAMES.get(agent.location, agent.location)
     idle_reason = agent.activity_state.idle_reason
@@ -106,14 +106,50 @@ def build_autonomous_context(agent, game_time) -> str:
     recent = agent.memory.read_recent_summaries(game_time.day, count=2)
     recent_section = f"\n【近日回顾】\n{recent}" if recent else ""
 
+    # 当前环境
+    env_parts = []
+    if event_engine:
+        weather = event_engine.get_current_weather()
+        events_text = event_engine.get_world_events_text()
+        env_parts.append(f"天气：{weather}")
+        if events_text != "今日无事":
+            env_parts.append(f"今日事件：{events_text}")
+    env_parts.append(f"当前地点：{location_cn}")
+    if location_registry:
+        colocated = location_registry.get_npcs_at(agent.location) - {agent.agent_id}
+        if colocated:
+            names = [_get_npc_name(nid) for nid in colocated]
+            env_parts.append(f"同处此地的人：{'、'.join(names)}")
+    env_section = "\n【当前环境】\n" + "\n".join(env_parts)
+
+    # 近期社交
+    social_section = ""
+    if hasattr(agent, "recent_social") and agent.recent_social:
+        social_lines = []
+        for s in agent.recent_social[-3:]:
+            social_lines.append(f"Day {s['day']} {s['hour']}:00 — 与{s['partner']}交谈：{s['summary']}")
+        social_section = "\n【近期社交】\n" + "\n".join(social_lines)
+
     return (
         f"【行动指令】\n"
         f"当前时间：Day {game_time.day}, {game_time.hour}:00\n"
-        f"你的位置：{location_cn}\n"
         f"你的状态：{status_text}"
         f"{last_activity_text}"
+        f"{env_section}"
         f"{today_log}"
-        f"{recent_section}\n"
+        f"{recent_section}"
+        f"{social_section}\n"
         f"你正在独自思考接下来做什么，不需要说话或与任何人对话。"
         f"请直接调用一个工具，不要生成对话文本。"
     )
+
+
+# NPC ID → 中文名映射（用于社交信息）
+_NPC_NAMES = {
+    "farmer": "农夫·乔治",
+    "bartender": "酒馆老板·Gus",
+}
+
+
+def _get_npc_name(npc_id: str) -> str:
+    return _NPC_NAMES.get(npc_id, npc_id)

@@ -21,6 +21,16 @@
       </div>
     </header>
 
+    <div class="event-banner">
+      <span class="event-banner-title">当前事件</span>
+      <div class="event-tags">
+        <span v-if="worldEvents.length === 0" class="event-tag event-tag--empty">今日无事</span>
+        <span v-for="evt in worldEvents" :key="evt.id" class="event-tag">
+          {{ evt.name }}（{{ evt.started_hour }}:00 起）
+        </span>
+      </div>
+    </div>
+
     <div class="observe-grid">
       <NPCObserveCard
         v-for="npc in npcList"
@@ -40,7 +50,7 @@ import NPCObserveCard from '../components/NPCObserveCard.vue'
 
 const store = useObserveStore()
 const gameStore = useGameStore()
-const { npcs, gameTime, wsConnected } = storeToRefs(store)
+const { npcs, gameTime, wsConnected, worldEvents } = storeToRefs(store)
 
 const npcList = computed(() => Object.values(npcs.value))
 
@@ -146,5 +156,41 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: var(--gap-md);
+}
+
+.event-banner {
+  background: var(--color-panel);
+  border: 2px solid var(--color-border);
+  padding: var(--gap-sm) var(--gap-md);
+  margin-bottom: var(--gap-md);
+  display: flex;
+  align-items: center;
+  gap: var(--gap-md);
+}
+
+.event-banner-title {
+  font-family: var(--font-pixel);
+  font-size: var(--font-size-xs);
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.event-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-sm);
+}
+
+.event-tag {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+}
+
+.event-tag--empty {
+  border-color: var(--color-border);
+  color: var(--color-border);
 }
 </style>
