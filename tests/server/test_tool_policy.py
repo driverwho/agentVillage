@@ -72,7 +72,7 @@ ALL_TOOLS = [_Farm(), _Brew(), _Eat(), _Rest(), _Gossip(), _Trade()]
 def test_identity_gate_farmer_cannot_brew():
     gate = IdentityGate()
     ctx = {"actor_id": "farmer", "allowed_professional": ["farm"]}
-    result = gate.filter(ALL_TOOLS, ctx)
+    result, removed = gate.filter(ALL_TOOLS, ctx)
     names = [t.name for t in result]
     assert "farm" in names
     assert "brew" not in names
@@ -83,7 +83,7 @@ def test_identity_gate_farmer_cannot_brew():
 def test_identity_gate_bartender_cannot_farm():
     gate = IdentityGate()
     ctx = {"actor_id": "bartender", "allowed_professional": ["brew"]}
-    result = gate.filter(ALL_TOOLS, ctx)
+    result, removed = gate.filter(ALL_TOOLS, ctx)
     names = [t.name for t in result]
     assert "brew" in names
     assert "farm" not in names
@@ -92,7 +92,7 @@ def test_identity_gate_bartender_cannot_farm():
 def test_identity_gate_preserves_non_professional():
     gate = IdentityGate()
     ctx = {"actor_id": "farmer", "allowed_professional": ["farm"]}
-    result = gate.filter(ALL_TOOLS, ctx)
+    result, removed = gate.filter(ALL_TOOLS, ctx)
     names = [t.name for t in result]
     assert "eat" in names
     assert "rest" in names
@@ -108,7 +108,7 @@ def test_state_gate_high_fatigue_blocks_social():
     gate = StateGate()
     state = NPCState(fatigue=85)
     ctx = {"npc_state": state}
-    result = gate.filter(ALL_TOOLS, ctx)
+    result, _ = gate.filter(ALL_TOOLS, ctx)
     names = [t.name for t in result]
     assert "gossip" not in names
     assert "trade" not in names
@@ -120,15 +120,15 @@ def test_state_gate_normal_fatigue_allows_all():
     gate = StateGate()
     state = NPCState(fatigue=50)
     ctx = {"npc_state": state}
-    result = gate.filter(ALL_TOOLS, ctx)
+    result, _ = gate.filter(ALL_TOOLS, ctx)
     assert len(result) == len(ALL_TOOLS)
 
 
 def test_state_gate_low_mood_blocks_professional():
     gate = StateGate()
-    state = NPCState(mood=15)
+    state = NPCState(mood=-1)
     ctx = {"npc_state": state}
-    result = gate.filter(ALL_TOOLS, ctx)
+    result, _ = gate.filter(ALL_TOOLS, ctx)
     names = [t.name for t in result]
     assert "farm" not in names
     assert "brew" not in names
@@ -142,7 +142,7 @@ def test_state_gate_low_mood_blocks_professional():
 def test_relationship_gate_low_trust_blocks_trade():
     gate = RelationshipGate()
     ctx = {"trust_level": 2}
-    result = gate.filter(ALL_TOOLS, ctx)
+    result, _ = gate.filter(ALL_TOOLS, ctx)
     names = [t.name for t in result]
     assert "trade" not in names
     assert "gossip" not in names
@@ -152,7 +152,7 @@ def test_relationship_gate_low_trust_blocks_trade():
 def test_relationship_gate_high_trust_allows_all():
     gate = RelationshipGate()
     ctx = {"trust_level": 8}
-    result = gate.filter(ALL_TOOLS, ctx)
+    result, _ = gate.filter(ALL_TOOLS, ctx)
     assert len(result) == len(ALL_TOOLS)
 
 
@@ -163,7 +163,7 @@ def test_relationship_gate_high_trust_allows_all():
 def test_time_gate_night_blocks_professional():
     gate = TimeGate()
     ctx = {"hour": 23}
-    result = gate.filter(ALL_TOOLS, ctx)
+    result, _ = gate.filter(ALL_TOOLS, ctx)
     names = [t.name for t in result]
     assert "farm" not in names
     assert "brew" not in names
@@ -174,7 +174,7 @@ def test_time_gate_night_blocks_professional():
 def test_time_gate_daytime_allows_all():
     gate = TimeGate()
     ctx = {"hour": 10}
-    result = gate.filter(ALL_TOOLS, ctx)
+    result, _ = gate.filter(ALL_TOOLS, ctx)
     assert len(result) == len(ALL_TOOLS)
 
 
@@ -185,7 +185,7 @@ def test_time_gate_daytime_allows_all():
 def test_quota_gate_exceeded_blocks_tool():
     gate = QuotaGate()
     ctx = {"daily_usage": {"gossip": 5}, "daily_limits": {"gossip": 3}}
-    result = gate.filter(ALL_TOOLS, ctx)
+    result, _ = gate.filter(ALL_TOOLS, ctx)
     names = [t.name for t in result]
     assert "gossip" not in names
     assert "trade" in names
@@ -194,7 +194,7 @@ def test_quota_gate_exceeded_blocks_tool():
 def test_quota_gate_within_limit_allows():
     gate = QuotaGate()
     ctx = {"daily_usage": {"gossip": 1}, "daily_limits": {"gossip": 3}}
-    result = gate.filter(ALL_TOOLS, ctx)
+    result, _ = gate.filter(ALL_TOOLS, ctx)
     names = [t.name for t in result]
     assert "gossip" in names
 

@@ -110,3 +110,23 @@ class MemoryManager:
     def add_dialogue(self, turn: DialogueTurn) -> None:
         current = self._read("user.md")
         self._write("user.md", current + f"\n[{turn.speaker}]: {turn.content}")
+
+    def write_daily_summary(self, day: int, content: str) -> None:
+        p = os.path.join(self.dir, "daily_summary", f"day{day}.md")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    def read_daily_summary(self, day: int) -> str:
+        p = os.path.join(self.dir, "daily_summary", f"day{day}.md")
+        if not os.path.exists(p):
+            return ""
+        with open(p, "r", encoding="utf-8") as f:
+            return f.read()
+
+    def read_recent_summaries(self, current_day: int, count: int = 2) -> str:
+        parts = []
+        for d in range(current_day - 1, max(0, current_day - 1 - count), -1):
+            content = self.read_daily_summary(d)
+            if content:
+                parts.append(f"Day {d}: {content.strip()[:150]}")
+        return "\n".join(parts)

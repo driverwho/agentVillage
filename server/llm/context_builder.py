@@ -12,7 +12,7 @@ class ScenarioType(Enum):
 SCENARIO_LAYERS = {
     ScenarioType.AUTONOMOUS_DECISION: {
         "L3": False,
-        "L4_scope": "agent_only",
+        "L4_scope": "autonomous",
         "L5": False,
     },
     ScenarioType.PLAYER_DIALOGUE: {
@@ -345,6 +345,8 @@ class ContextBuilder:
             return memory_files
         if scope == "agent_only":
             return {k: v for k, v in memory_files.items() if "agent_mem" in k}
+        if scope == "autonomous":
+            return {k: v for k, v in memory_files.items() if "agent_mem" in k or "self" in k}
         return memory_files
 
     def _build_layer_4(self, trigger: str, memory_files: dict, background: dict | None = None) -> tuple:

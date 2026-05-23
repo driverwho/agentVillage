@@ -96,11 +96,24 @@ def build_autonomous_context(agent, game_time) -> str:
         status_text = "空闲"
         last_activity_text = f"\n上一个活动：{idle_reason}"
 
+    # 今日活动日志
+    if agent.activity_log:
+        today_log = "\n【今日已完成】\n" + "\n".join(agent.activity_log)
+    else:
+        today_log = "\n【今日已完成】\n（刚开始新的一天）"
+
+    # 近日回顾（最近2天的 daily_summary）
+    recent = agent.memory.read_recent_summaries(game_time.day, count=2)
+    recent_section = f"\n【近日回顾】\n{recent}" if recent else ""
+
     return (
         f"【行动指令】\n"
         f"当前时间：Day {game_time.day}, {game_time.hour}:00\n"
         f"你的位置：{location_cn}\n"
         f"你的状态：{status_text}"
-        f"{last_activity_text}\n"
-        f"请从可用工具中选择你接下来要做的事情。"
+        f"{last_activity_text}"
+        f"{today_log}"
+        f"{recent_section}\n"
+        f"你正在独自思考接下来做什么，不需要说话或与任何人对话。"
+        f"请直接调用一个工具，不要生成对话文本。"
     )

@@ -310,7 +310,7 @@ class TestScenarioDispatch:
         auto_cfg = SCENARIO_LAYERS[ScenarioType.AUTONOMOUS_DECISION]
         assert auto_cfg["L3"] is False
         assert auto_cfg["L5"] is False
-        assert auto_cfg["L4_scope"] == "agent_only"
+        assert auto_cfg["L4_scope"] == "autonomous"
 
         dlg_cfg = SCENARIO_LAYERS[ScenarioType.PLAYER_DIALOGUE]
         assert dlg_cfg["L3"] is True
@@ -366,6 +366,14 @@ class TestScenarioDispatch:
         files = {"agent_mem.md": "x", "user.md": "y"}
         result = builder._filter_memory_scope(files, "unknown_scope")
         assert result == files
+
+    def test_filter_memory_scope_autonomous(self):
+        builder = ContextBuilder(model_limit=4096)
+        files = {"agent_mem.md": "关系", "self.md": "动机", "user.md": "玩家印象"}
+        result = builder._filter_memory_scope(files, "autonomous")
+        assert "agent_mem.md" in result
+        assert "self.md" in result
+        assert "user.md" not in result
 
     def test_build_autonomous_skips_l3(self):
         from server.models.npc_state import NPCState

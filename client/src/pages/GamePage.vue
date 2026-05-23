@@ -69,7 +69,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import TimeControl from '../components/TimeControl.vue'
 import StatusPanel from '../components/StatusPanel.vue'
 import NPCPanel from '../components/NPCPanel.vue'
@@ -81,6 +81,7 @@ import NotebookPanel from '../components/NotebookPanel.vue'
 import TavernPanel from '../components/TavernPanel.vue'
 import { useGameStore } from '../stores/gameStore'
 import { toasts } from '../services/toast'
+import { connect, disconnect } from '../services/websocket'
 
 const store = useGameStore()
 const leftCollapsed = ref(false)
@@ -89,6 +90,15 @@ const rightTab = ref<'event' | 'notebook'>('event')
 
 onMounted(async () => {
   await Promise.all([store.fetchWorld(), store.fetchPlayer()])
+  connect((msg) => {
+    if (msg.type === 'game_time_update' && store.world) {
+      store.world.game_time = { day: msg.day, hour: msg.hour }
+    }
+  })
+})
+
+onUnmounted(() => {
+  disconnect()
 })
 </script>
 
