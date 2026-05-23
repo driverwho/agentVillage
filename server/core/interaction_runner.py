@@ -16,8 +16,13 @@ class ConversationResult:
 
 class InteractionRunner:
     def __init__(self, context_builder: ContextBuilder, llm_client):
-        self.context_builder = context_builder
+        self._builder_factory = context_builder  # 保留作为模板，实际使用时创建新实例
         self.llm_client = llm_client
+
+    def _new_builder(self) -> ContextBuilder:
+        """每次对话轮次创建新的 ContextBuilder，避免 identity checksum 冲突。"""
+        from server.config import config as game_config
+        return ContextBuilder.from_config(game_config)
 
     async def run_conversation(self, initiator, target,
                                location: str, game_time: GameTime) -> ConversationResult:
@@ -83,7 +88,7 @@ class InteractionRunner:
                 current_input=prompt,
                 background=speaker.background,
             )
-            build_result = self.context_builder.build(params)
+            build_result = self._new_builder().build(params)
             response = await self.llm_client.chat(build_result.messages)
             content = response.get("choices", [{}])[0].get("message", {}).get("content", "...")
 
