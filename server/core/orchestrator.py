@@ -26,6 +26,9 @@ class Orchestrator:
         self.activity_manager = ActivityManager()
         self._auto_tick_task: asyncio.Task | None = None
         self._init_npcs()
+        self._init_event_system()
+        self._init_location_registry()
+        self._init_hooks()
 
     def _init_npcs(self) -> None:
         from server.core.background_manager import BackgroundManager
@@ -45,6 +48,50 @@ class Orchestrator:
 
         from server.tools.setup import init_tool_system
         init_tool_system(self.npcs)
+
+    def _init_event_system(self) -> None:
+        from server.core.event_engine import EventEngine, EventState, ActiveEvent, load_event_defs
+
+        saved = self.store.load("event_state")
+        if saved:
+            state = EventState(
+                active_events=[ActiveEvent(**e) for e in saved.get("active_events", [])],
+                cooldowns=saved.get("cooldowns", {}),
+            )
+        else:
+            state = EventState()
+        event_defs = load_event_defs("server/data/events")
+        self.event_engine = EventEngine(event_defs=event_defs, state=state)
+
+    def _init_location_registry(self) -> None:
+        from server.core.location_registry import LocationRegistry
+
+        saved = self.store.load("locations")
+        if saved:
+            self.location_registry = LocationRegistry(initial=saved)
+        else:
+            merged: Dict[str, list] = {}
+            for npc_id, npc in self.npcs.items():
+                merged.setdefault(npc.location, []).append(npc_id)
+            self.location_registry = LocationRegistry(initial=merged)
+
+    def _init_hooks(self) -> None:
+        from server.hooks import HookRegistry
+        from server.hooks.interaction_hook import InteractionHook
+        from server.core.interaction_runner import InteractionRunner
+        from server.llm.context_builder import ContextBuilder
+        from server.llm.client import get_llm_client
+        from server.config import config as game_config
+
+        self.hook_registry = HookRegistry()
+        builder = ContextBuilder.from_config(game_config)
+        runner = InteractionRunner(context_builder=builder, llm_client=get_llm_client())
+        interaction_hook = InteractionHook(
+            npc_registry=self.npcs,
+            location_registry=self.location_registry,
+            interaction_runner=runner,
+        )
+        self.hook_registry.register(interaction_hook)
 
     def advance_time(self, minutes: int = 60) -> None:
         if self.time_system.is_paused:
@@ -82,6 +129,20 @@ class Orchestrator:
             "hour": game_time.hour,
             "minute": 0,
         })
+
+        # 步骤 0.5: 事件引擎 tick
+        prev_event_ids = [e.id for e in self.event_engine.state.active_events]
+        self.event_engine.tick(game_time)
+        curr_event_ids = [e.id for e in self.event_engine.state.active_events]
+        if prev_event_ids != curr_event_ids:
+            _broadcast_all({
+                "type": "world_events_update",
+                "events": [
+                    {"id": e.id, "name": e.name, "description": e.description,
+                     "started_hour": e.started_hour}
+                    for e in self.event_engine.state.active_events
+                ],
+            })
 
         # 步骤 1: 更新所有 NPC 状态值
         for npc in self.npcs.values():
@@ -212,8 +273,8 @@ class Orchestrator:
             world_state = {
                 "day": game_time.day,
                 "hour": game_time.hour,
-                "weather": "晴",
-                "events": "今日无事",
+                "weather": self.event_engine.get_current_weather(),
+                "events": self.event_engine.get_world_events_text(),
             }
             autonomous_input = build_autonomous_context(npc, game_time)
             params = BuildParams(
@@ -252,7 +313,14 @@ class Orchestrator:
                 if tool_name == "move" and result.get("tool_result"):
                     new_loc = result["tool_result"].get("state_changes", {}).get("location")
                     if new_loc:
+                        old_loc = self.location_registry.get_location(npc_id)
+                        self.location_registry.move(npc_id, old_loc, new_loc)
                         npc.location = new_loc
+                        await self.hook_registry.fire("post_move", {
+                            "actor_id": npc_id,
+                            "location": new_loc,
+                            "game_time": game_time,
+                        })
             else:
                 self.activity_manager.transition_to_active(
                     npc.activity_state, "_idle_wander", 1, game_time
@@ -298,6 +366,16 @@ class Orchestrator:
             "is_paused": self.time_system.is_paused,
         })
         self.store.save("player_state", self.player_state.__dict__)
+        self.store.save("locations", self.location_registry.to_dict())
+        self.store.save("event_state", {
+            "active_events": [
+                {"id": e.id, "name": e.name, "description": e.description,
+                 "started_day": e.started_day, "started_hour": e.started_hour,
+                 "expires_day": e.expires_day, "expires_hour": e.expires_hour}
+                for e in self.event_engine.state.active_events
+            ],
+            "cooldowns": self.event_engine.state.cooldowns,
+        })
 
     async def _auto_tick_loop(self) -> None:
         while True:

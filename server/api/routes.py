@@ -28,8 +28,8 @@ def _build_messages(npc, input_text: str) -> tuple[list, object, str, int]:
     world_state = {
         "day": orch_mod.orch.time_system.game_time.day,
         "hour": orch_mod.orch.time_system.game_time.hour,
-        "weather": "晴",
-        "events": "今日无事",
+        "weather": orch_mod.orch.event_engine.get_current_weather(),
+        "events": orch_mod.orch.event_engine.get_world_events_text(),
     }
 
     history_dicts = []
@@ -358,6 +358,11 @@ def get_npcs_status():
     return {
         "npcs": npcs_data,
         "game_time": game_time.to_dict(),
+        "world_events": [
+            {"id": e.id, "name": e.name, "description": e.description,
+             "started_hour": e.started_hour}
+            for e in orch_mod.orch.event_engine.state.active_events
+        ],
     }
 
 
