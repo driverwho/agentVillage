@@ -276,7 +276,11 @@ class Orchestrator:
                 "weather": self.event_engine.get_current_weather(),
                 "events": self.event_engine.get_world_events_text(),
             }
-            autonomous_input = build_autonomous_context(npc, game_time)
+            autonomous_input = build_autonomous_context(
+                npc, game_time,
+                location_registry=self.location_registry,
+                event_engine=self.event_engine,
+            )
             params = BuildParams(
                 scenario=ScenarioType.AUTONOMOUS_DECISION,
                 identity=npc.identity,
