@@ -1,0 +1,28 @@
+category: visitor
+events:
+  - id: merchant_visit
+    name: "旅行商人"
+    probability: 0.08
+    duration_hours: 10
+    conditions:
+      min_day: 2
+      cooldown_days: 4
+    description: "一个背着大包的旅行商人在市场摆起了摊位，兜售各地的稀罕物件。"
+
+  - id: wandering_poet
+    name: "流浪诗人"
+    probability: 0.06
+    duration_hours: 8
+    conditions:
+      min_day: 3
+      cooldown_days: 5
+    description: "一位衣衫褴褛但气质不凡的流浪诗人来到村里，在酒馆吟诵诗歌换取食宿。"
+
+  - id: mysterious_messenger
+    name: "神秘信使"
+    probability: 0.05
+    duration_hours: 4
+    conditions:
+      min_day: 5
+      cooldown_days: 7
+    description: "一个戴着兜帽的信使骑马经过村庄，在村口短暂停留后匆匆离去。"

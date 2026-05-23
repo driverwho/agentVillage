@@ -1,0 +1,36 @@
+category: weather
+events:
+  - id: heavy_rain
+    name: "暴雨"
+    probability: 0.12
+    duration_hours: 8
+    conditions:
+      min_day: 2
+      cooldown_days: 2
+    description: "乌云密布，暴雨倾盆，田间泥泞难行。"
+
+  - id: fog
+    name: "浓雾"
+    probability: 0.10
+    duration_hours: 4
+    conditions:
+      hour_range: [6, 10]
+      cooldown_days: 2
+    description: "晨雾弥漫，五步之外不见人影。"
+
+  - id: scorching_heat
+    name: "酷暑"
+    probability: 0.10
+    duration_hours: 6
+    conditions:
+      hour_range: [10, 18]
+      cooldown_days: 3
+    description: "烈日当空，热浪灼人，户外劳作格外辛苦。"
+
+  - id: strong_wind
+    name: "大风"
+    probability: 0.08
+    duration_hours: 5
+    conditions:
+      cooldown_days: 2
+    description: "狂风呼啸，树枝摇曳，屋顶瓦片似乎在松动。"

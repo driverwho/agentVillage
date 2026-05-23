@@ -101,3 +101,30 @@ def test_get_world_events_text_with_events():
     engine = EventEngine(event_defs=[], state=state)
     text = engine.get_world_events_text()
     assert "旅行商人在市场" in text
+
+
+def test_load_event_defs(tmp_path):
+    import yaml
+    yaml_content = {
+        "category": "weather",
+        "events": [
+            {"id": "rain", "name": "雨", "probability": 0.1,
+             "duration_hours": 4, "conditions": {}, "description": "下雨了"}
+        ]
+    }
+    (tmp_path / "weather.yaml").write_text(
+        yaml.dump(yaml_content, allow_unicode=True), encoding="utf-8"
+    )
+    from server.core.event_engine import load_event_defs
+    defs = load_event_defs(str(tmp_path))
+    assert len(defs) == 1
+    assert defs[0].id == "rain"
+    assert defs[0].category == "weather"
+
+
+def test_load_event_defs_from_real_data():
+    from server.core.event_engine import load_event_defs
+    defs = load_event_defs("server/data/events")
+    assert len(defs) == 15
+    categories = {d.category for d in defs}
+    assert categories == {"weather", "visitor", "discovery", "npc_trigger"}

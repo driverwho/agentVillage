@@ -1,0 +1,38 @@
+category: npc_trigger
+events:
+  - id: son_letter
+    name: "儿子来信"
+    probability: 0.05
+    duration_hours: 24
+    conditions:
+      min_day: 4
+      cooldown_days: 10
+    description: "乔治收到了城里儿子寄来的一封信，信封上的字迹有些潦草。"
+
+  - id: suspicious_footprints
+    name: "可疑脚印"
+    probability: 0.06
+    duration_hours: 12
+    conditions:
+      min_day: 3
+      cooldown_days: 6
+    description: "Gus 在酒馆后门发现了一串可疑的脚印，似乎有人在夜里徘徊过。"
+
+  - id: stray_dog_injured
+    name: "流浪狗受伤"
+    probability: 0.07
+    duration_hours: 24
+    conditions:
+      min_day: 2
+      cooldown_days: 7
+    description: "村里的流浪狗瘸着一条腿回来了，身上有被什么东西咬过的痕迹。"
+
+  - id: tavern_leak
+    name: "酒馆漏雨"
+    probability: 0.06
+    duration_hours: 12
+    conditions:
+      min_day: 2
+      cooldown_days: 8
+      required_event: "heavy_rain"
+    description: "酒馆屋顶开始漏雨，Gus 不得不用水桶接水，酒馆里弥漫着潮湿的气味。"
