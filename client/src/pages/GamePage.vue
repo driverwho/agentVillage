@@ -25,14 +25,13 @@
           >💬 对话</button>
           <button
             class="switch-tab"
-            :class="{ 'switch-tab--active': centerTab === 'tavern' }"
-            @click="centerTab = 'tavern'"
-          >🍺 酒馆</button>
+            :class="{ 'switch-tab--active': centerTab === 'news' }"
+            @click="centerTab = 'news'"
+          >👂 村庄见闻</button>
         </div>
         <ChatPanel v-show="centerTab === 'chat'" />
-        <TavernPanel v-show="centerTab === 'tavern'" />
+        <VillageNewsPanel v-show="centerTab === 'news'" />
       </div>
-      <ToolPanelV2 />
     </main>
 
     <aside class="col-right">
@@ -52,7 +51,6 @@
         <EventPanel v-show="rightTab === 'event'" />
         <NotebookPanel v-show="rightTab === 'notebook'" />
       </div>
-      <EavesdropPanel />
     </aside>
 
     <div class="toast-container" v-if="toasts.length">
@@ -74,23 +72,24 @@ import TimeControl from '../components/TimeControl.vue'
 import StatusPanel from '../components/StatusPanel.vue'
 import NPCPanel from '../components/NPCPanel.vue'
 import ChatPanel from '../components/ChatPanel.vue'
-import ToolPanelV2 from '../components/ToolPanelV2.vue'
 import EventPanel from '../components/EventPanel.vue'
-import EavesdropPanel from '../components/EavesdropPanel.vue'
 import NotebookPanel from '../components/NotebookPanel.vue'
-import TavernPanel from '../components/TavernPanel.vue'
+import VillageNewsPanel from '../components/VillageNewsPanel.vue'
 import { useGameStore } from '../stores/gameStore'
+import { useConversationStore } from '../stores/conversationStore'
 import { toasts } from '../services/toast'
 import { connect, disconnect } from '../services/websocket'
 
 const store = useGameStore()
+const convStore = useConversationStore()
 const leftCollapsed = ref(false)
-const centerTab = ref<'chat' | 'tavern'>('chat')
+const centerTab = ref<'chat' | 'news'>('chat')
 const rightTab = ref<'event' | 'notebook'>('event')
 
 onMounted(async () => {
   await Promise.all([store.fetchWorld(), store.fetchPlayer()])
   connect((msg) => {
+    if (convStore.handleMessage(msg)) return
     if (msg.type === 'game_time_update' && store.world) {
       store.world.game_time = { day: msg.day, hour: msg.hour }
     }

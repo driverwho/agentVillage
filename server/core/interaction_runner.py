@@ -27,6 +27,25 @@ class InteractionRunner:
         activity_mgr.transition_to_active(initiator.activity_state, "socializing", 1, game_time)
         activity_mgr.transition_to_active(target.activity_state, "socializing", 1, game_time)
 
+        from server.api.ws import ws_manager
+        import asyncio
+
+        initiator_id = initiator.id if hasattr(initiator, 'id') else initiator.agent_id
+        target_id = target.id if hasattr(target, 'id') else target.agent_id
+        conversation_id = f"conv_d{game_time.day}h{game_time.hour}_{'_'.join(sorted([initiator_id, target_id]))}"
+
+        try:
+            asyncio.ensure_future(ws_manager.broadcast({
+                "type": "npc_conversation_start",
+                "conversation_id": conversation_id,
+                "day": game_time.day,
+                "hour": game_time.hour,
+                "location": location,
+                "participants": sorted([initiator_id, target_id]),
+            }))
+        except RuntimeError:
+            pass
+
         dialogue: List[Dict[str, str]] = []
         speakers = [initiator, target, initiator, target]
 
@@ -75,12 +94,32 @@ class InteractionRunner:
             else:
                 dialogue.append({"speaker": speaker_id, "content": content.strip()})
 
+            try:
+                asyncio.ensure_future(ws_manager.broadcast({
+                    "type": "npc_conversation_message",
+                    "conversation_id": conversation_id,
+                    "speaker_id": speaker_id,
+                    "speaker_name": speaker.identity.get("name", speaker_id),
+                    "content": dialogue[-1]["content"],
+                }))
+            except RuntimeError:
+                pass
+
         if not summary:
             init_name = initiator.identity.get("name", "某人")
             target_name = target.identity.get("name", "某人")
             summary = f"{init_name}和{target_name}聊了几句。"
 
         self._write_results(initiator, target, dialogue, summary, game_time, location)
+
+        try:
+            asyncio.ensure_future(ws_manager.broadcast({
+                "type": "npc_conversation_end",
+                "conversation_id": conversation_id,
+                "summary": summary,
+            }))
+        except RuntimeError:
+            pass
 
         return ConversationResult(
             participants=(
