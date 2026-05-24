@@ -84,8 +84,12 @@ LOCATION_NAMES = {
 }
 
 
-def build_autonomous_context(agent, game_time, location_registry=None, event_engine=None) -> str:
-    """构建 NPC 自主决策时的 current_input 文本。"""
+def build_autonomous_context(agent, game_time, location_registry=None,
+                             event_engine=None, belief_store=None) -> str:
+    """构建 NPC 自主决策时的 current_input 文本。
+
+    当 belief_store 提供时，精简 input——信念由 ContextBuilder 的 L1-L4 层负责注入。
+    """
     location_cn = LOCATION_NAMES.get(agent.location, agent.location)
     idle_reason = agent.activity_state.idle_reason
 
@@ -96,17 +100,7 @@ def build_autonomous_context(agent, game_time, location_registry=None, event_eng
         status_text = "空闲"
         last_activity_text = f"\n上一个活动：{idle_reason}"
 
-    # 今日活动日志
-    if agent.activity_log:
-        today_log = "\n【今日已完成】\n" + "\n".join(agent.activity_log)
-    else:
-        today_log = "\n【今日已完成】\n（刚开始新的一天）"
-
-    # 近日回顾（最近2天的 daily_summary）
-    recent = agent.memory.read_recent_summaries(game_time.day, count=2)
-    recent_section = f"\n【近日回顾】\n{recent}" if recent else ""
-
-    # 当前环境
+    # 当前环境（客观即时感知，两种模式都需要）
     env_parts = []
     if event_engine:
         weather = event_engine.get_current_weather()
@@ -121,6 +115,29 @@ def build_autonomous_context(agent, game_time, location_registry=None, event_eng
             names = [_get_npc_name(nid) for nid in colocated]
             env_parts.append(f"同处此地的人：{'、'.join(names)}")
     env_section = "\n【当前环境】\n" + "\n".join(env_parts)
+
+    # 信念系统模式：精简 input，信念由 ContextBuilder 注入
+    if belief_store is not None:
+        return (
+            f"【行动指令】\n"
+            f"当前时间：Day {game_time.day}, {game_time.hour}:00\n"
+            f"你的状态：{status_text}"
+            f"{last_activity_text}"
+            f"{env_section}\n"
+            f"你正在独自思考接下来做什么，不需要说话或与任何人对话。"
+            f"请直接调用一个工具，不要生成对话文本。"
+        )
+
+    # 旧模式：保持原有逻辑不变
+    # 今日活动日志
+    if agent.activity_log:
+        today_log = "\n【今日已完成】\n" + "\n".join(agent.activity_log)
+    else:
+        today_log = "\n【今日已完成】\n（刚开始新的一天）"
+
+    # 近日回顾（最近2天的 daily_summary）
+    recent = agent.memory.read_recent_summaries(game_time.day, count=2)
+    recent_section = f"\n【近日回顾】\n{recent}" if recent else ""
 
     # 近期社交
     social_section = ""

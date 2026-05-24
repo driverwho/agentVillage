@@ -15,9 +15,12 @@ class ConversationResult:
 
 
 class InteractionRunner:
-    def __init__(self, context_builder: ContextBuilder, llm_client):
+    def __init__(self, context_builder: ContextBuilder, llm_client,
+                 belief_propagator=None, event_log=None):
         self._builder_factory = context_builder  # 保留作为模板，实际使用时创建新实例
         self.llm_client = llm_client
+        self._belief_propagator = belief_propagator
+        self._event_log = event_log
 
     def _new_builder(self) -> ContextBuilder:
         """每次对话轮次创建新的 ContextBuilder，避免 identity checksum 冲突。"""
@@ -116,6 +119,31 @@ class InteractionRunner:
             summary = f"{init_name}和{target_name}聊了几句。"
 
         self._write_results(initiator, target, dialogue, summary, game_time, location)
+
+        # 信念传播：对话摘要转化为双方信念
+        initiator_id = initiator.id if hasattr(initiator, 'id') else initiator.agent_id
+        target_id = target.id if hasattr(target, 'id') else target.agent_id
+
+        if self._belief_propagator and summary:
+            self._belief_propagator.propagate_from_dialogue(
+                speaker_id=initiator_id,
+                listener_id=target_id,
+                summary=summary,
+                game_time={"day": game_time.day, "hour": game_time.hour},
+            )
+
+        if self._event_log:
+            from server.models.event import GameEvent
+            event = GameEvent(
+                type="dialogue",
+                timestamp={"day": game_time.day, "hour": game_time.hour},
+                actor=initiator_id,
+                location=location,
+                content=summary,
+                witnesses=[initiator_id, target_id],
+                visibility="location",
+            )
+            self._event_log.append(event)
 
         try:
             asyncio.ensure_future(ws_manager.broadcast({

@@ -43,6 +43,9 @@ class BuildParams:
     current_input: str = ""
     background: dict = field(default_factory=dict)
     scenario: ScenarioType = ScenarioType.PLAYER_DIALOGUE
+    beliefs: List = field(default_factory=list)
+    interlocutor_beliefs: List = field(default_factory=list)
+    reasoning_beliefs: List = field(default_factory=list)
 
 
 @dataclass
@@ -139,6 +142,9 @@ class ContextBuilder:
 
         bg = params.background or {}
 
+        # 是否使用信念驱动模式
+        use_beliefs = bool(params.beliefs)
+
         # Step 1: Layer 0
         l0 = self._build_layer_0(params.identity, bg)
         audit["L0"] = {"tokens": l0.tokens, "truncated": l0.truncated}
@@ -150,23 +156,40 @@ class ContextBuilder:
             )
 
         # Step 2-4: Layers 1-3
-        l1 = self._build_layer_1(params.world_state, bg)
+        if use_beliefs:
+            l1 = self._build_layer_1_v2(params.world_state)
+        else:
+            l1 = self._build_layer_1(params.world_state, bg)
         audit["L1"] = {"tokens": l1.tokens, "truncated": l1.truncated}
-        l2 = self._build_layer_2(params.npc_state, bg)
+
+        if use_beliefs:
+            l2 = self._build_layer_2_v2(params.npc_state, params.reasoning_beliefs, bg)
+        else:
+            l2 = self._build_layer_2(params.npc_state, bg)
         audit["L2"] = {"tokens": l2.tokens, "truncated": l2.truncated}
 
         if scenario_config["L3"]:
-            l3 = self._build_layer_3(params.interlocutor, bg)
+            if use_beliefs and params.interlocutor_beliefs:
+                l3 = self._build_layer_3_v2(params.interlocutor, params.interlocutor_beliefs)
+            else:
+                l3 = self._build_layer_3(params.interlocutor, bg)
         else:
             l3 = LayerResult(content="", tokens=0)
         audit["L3"] = {"tokens": l3.tokens, "truncated": l3.truncated}
 
-        # Step 5: Layer 4 — 记忆检索（按场景过滤）
-        filtered_files = self._filter_memory_scope(params.memory_files, scenario_config["L4_scope"])
-        l4_content, l4_meta = self._build_layer_4(params.current_input, filtered_files, bg)
-        l4_tokens = TokenCounter.count(l4_content)
-        l4_quota = self._quota(4)
-        l4_truncated = l4_tokens > l4_quota
+        # Step 5: Layer 4
+        if use_beliefs:
+            l4_content = self._format_beliefs(params.beliefs)
+            l4_tokens = TokenCounter.count(l4_content)
+            l4_quota = self._quota(4)
+            l4_truncated = l4_tokens > l4_quota
+            l4_meta = {"source": "belief_store", "count": len(params.beliefs)}
+        else:
+            filtered_files = self._filter_memory_scope(params.memory_files, scenario_config["L4_scope"])
+            l4_content, l4_meta = self._build_layer_4(params.current_input, filtered_files, bg)
+            l4_tokens = TokenCounter.count(l4_content)
+            l4_quota = self._quota(4)
+            l4_truncated = l4_tokens > l4_quota
         audit["L4"] = {"tokens": min(l4_tokens, l4_quota), "truncated": l4_truncated, "meta": l4_meta}
 
         # Step 6: Layer 5 — 活跃对话（弹性）
@@ -444,6 +467,84 @@ class ContextBuilder:
                     content = content.replace(kw, "[filtered]")
             sanitized.append({**m, "content": content})
         return sanitized
+
+    # ============================================================
+    # 信念驱动 v2 层方法
+    # ============================================================
+
+    def _build_layer_1_v2(self, world_state: dict) -> LayerResult:
+        content = (
+            f"【世界信息】\n"
+            f"当前时间：Day {world_state.get('day', '?')}, {world_state.get('hour', '?')}:00。"
+            f"天气：{world_state.get('weather', '晴')}。"
+        )
+        tokens = TokenCounter.count(content)
+        return LayerResult(content=content, tokens=tokens)
+
+    def _build_layer_2_v2(self, npc_state, reasoning_beliefs: list, background: dict) -> LayerResult:
+        d = npc_state.describe()
+        parts = [
+            "【自身状态】",
+            f"{d['health']}。{d['hunger']}。{d['fatigue']}。{d['mood']}。",
+        ]
+
+        state_reactions = background.get("state_reactions", {})
+        reactions = []
+        if npc_state.mood < 40 and "mood_low" in state_reactions:
+            reactions.append(state_reactions["mood_low"])
+        if npc_state.hunger < 40 and "hunger_low" in state_reactions:
+            reactions.append(state_reactions["hunger_low"])
+        if npc_state.fatigue > 60 and "fatigue_high" in state_reactions:
+            reactions.append(state_reactions["fatigue_high"])
+        if reactions:
+            parts.append("由于当前状态：" + "；".join(reactions))
+
+        if reasoning_beliefs:
+            parts.append("\n【你的近期决策】")
+            for b in reasoning_beliefs[-3:]:
+                parts.append(f"- {b.content}")
+
+        content = "\n".join(parts)
+        tokens = TokenCounter.count(content)
+        return LayerResult(content=content, tokens=tokens)
+
+    def _build_layer_3_v2(self, interlocutor: dict, interlocutor_beliefs: list) -> LayerResult:
+        name = interlocutor.get("name", "某人")
+        parts = [f"【对方信息】\n你正在与{name}对话。"]
+
+        if interlocutor_beliefs:
+            parts.append("你对ta的了解：")
+            for b in interlocutor_beliefs[:5]:
+                parts.append(f"- {b.content}")
+
+        content = "\n".join(parts)
+        tokens = TokenCounter.count(content)
+        quota = self._quota(3)
+        truncated = tokens > quota
+        if truncated:
+            content = parts[0] + "\n" + "\n".join(parts[1:4])
+            tokens = TokenCounter.count(content)
+        return LayerResult(content=content, tokens=tokens, truncated=truncated)
+
+    def _format_beliefs(self, beliefs: list) -> str:
+        high = [b for b in beliefs if b.confidence == "high"]
+        medium = [b for b in beliefs if b.confidence == "medium"]
+        low = [b for b in beliefs if b.confidence == "low"]
+
+        parts = []
+        if high:
+            parts.append("【你确定的事】")
+            for b in high:
+                parts.append(f"- {b.content}")
+        if medium or low:
+            parts.append("【你听说的（未证实）】")
+            for b in medium + low:
+                source_hint = ""
+                if b.source.startswith("told_by:"):
+                    teller = b.source.replace("told_by:", "")
+                    source_hint = f"（{teller}说的）"
+                parts.append(f"- {b.content}{source_hint}")
+        return "\n".join(parts)
 
 
 # 模块级 TokenCounter 引用（类方法中延迟导入以避免循环依赖）
